@@ -9,7 +9,10 @@ data class LocalMaskAdjustments(
     val adjustments: Adjustments = Adjustments.NEUTRAL,
     val filter: FilterSettings = FilterSettings.NEUTRAL,
     val effects: PhotoEffects = PhotoEffects.NEUTRAL,
-    val colorGrading: ColorGradingSettings = ColorGradingSettings.NEUTRAL
+    val colorGrading: ColorGradingSettings = ColorGradingSettings.NEUTRAL,
+    val hsl: HslSettings = HslSettings.NEUTRAL,
+    val curves: CurvesSettings = CurvesSettings.NEUTRAL,
+    val healing: HealingSettings = HealingSettings.NEUTRAL
 )
 
 data class MaskSelection(
@@ -115,6 +118,12 @@ data class MaskingState(
         if (selectedMask == MaskType.SUBJECT) subject else background
 
     fun isNeutral(): Boolean =
+        subject.adjustments.adjustments.isNeutral() && subject.adjustments.filter.isNeutral() && 
+        subject.adjustments.effects.isNeutral() && subject.adjustments.colorGrading.isNeutral() && 
+        subject.adjustments.hsl.isNeutral() && subject.adjustments.curves.isNeutral() && subject.adjustments.healing.isNeutral() &&
+        background.adjustments.adjustments.isNeutral() && background.adjustments.filter.isNeutral() &&
+        background.adjustments.effects.isNeutral() && background.adjustments.colorGrading.isNeutral() && 
+        background.adjustments.hsl.isNeutral() && background.adjustments.curves.isNeutral() && background.adjustments.healing.isNeutral() &&
         subject.selection == null && background.selection == null
 
     fun paintSelected(

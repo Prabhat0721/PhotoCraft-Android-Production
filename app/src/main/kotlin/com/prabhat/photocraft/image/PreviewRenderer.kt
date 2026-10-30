@@ -9,8 +9,12 @@ import com.prabhat.photocraft.edit.AdjustmentMath
 import com.prabhat.photocraft.edit.ColorGradingMath
 import com.prabhat.photocraft.edit.ColorGradingSettings
 import com.prabhat.photocraft.edit.Adjustments
-import com.prabhat.photocraft.edit.FilterMath
-import com.prabhat.photocraft.edit.FilterSettings
+import com.prabhat.photocraft.edit.CurvesMath
+import com.prabhat.photocraft.edit.CurvesSettings
+import com.prabhat.photocraft.edit.HealingMath
+import com.prabhat.photocraft.edit.HealingSettings
+import com.prabhat.photocraft.edit.HslMath
+import com.prabhat.photocraft.edit.HslSettings
 import com.prabhat.photocraft.edit.PhotoEffects
 import com.prabhat.photocraft.edit.PhotoEffectsMath
 import com.prabhat.photocraft.edit.MaskingState
@@ -45,6 +49,9 @@ class PreviewRenderer : Closeable {
         filter: FilterSettings,
         effects: PhotoEffects,
         colorGrading: ColorGradingSettings = ColorGradingSettings.NEUTRAL,
+        hsl: HslSettings = HslSettings.NEUTRAL,
+        curves: CurvesSettings = CurvesSettings.NEUTRAL,
+        healing: HealingSettings = HealingSettings.NEUTRAL,
         masking: MaskingState = MaskingState(),
         callback: (Result) -> Unit
     ) {
@@ -58,7 +65,7 @@ class PreviewRenderer : Closeable {
                 return@post
             }
 
-            val result = render(source, adjustments, filter, effects, colorGrading, masking)
+            val result = render(source, adjustments, filter, effects, colorGrading, hsl, curves, healing, masking)
 
             if (closed.get() || !requests.isCurrent(requestId)) {
                 recycleDiscarded(result, source)
@@ -81,10 +88,13 @@ class PreviewRenderer : Closeable {
         filter: FilterSettings,
         effects: PhotoEffects,
         colorGrading: ColorGradingSettings,
+        hsl: HslSettings,
+        curves: CurvesSettings,
+        healing: HealingSettings,
         masking: MaskingState
     ): Result {
         if (adjustments.isNeutral() && filter.isNeutral() && effects.isNeutral() &&
-            colorGrading.isNeutral() && masking.isNeutral()) {
+            colorGrading.isNeutral() && hsl.isNeutral() && curves.isNeutral() && healing.isNeutral() && masking.isNeutral()) {
             return Result.Success(source)
         }
 
@@ -102,6 +112,9 @@ class PreviewRenderer : Closeable {
             FilterMath.applyInPlace(pixels, filter)
             PhotoEffectsMath.applyInPlace(pixels, width, height, effects)
             ColorGradingMath.applyInPlace(pixels, colorGrading)
+            HslMath.applyInPlace(pixels, hsl)
+            CurvesMath.applyInPlace(pixels, curves)
+            HealingMath.applyInPlace(pixels, width, height, healing)
 
             // Apply each enabled local mask and blend by its coverage.
             for (layer in listOf(masking.subject, masking.background)) {
@@ -110,7 +123,8 @@ class PreviewRenderer : Closeable {
                 val local = layer.adjustments
 
                 if (local.adjustments.isNeutral() && local.filter.isNeutral() &&
-                    local.effects.isNeutral() && local.colorGrading.isNeutral()) {
+                    local.effects.isNeutral() && local.colorGrading.isNeutral() && local.hsl.isNeutral() && 
+                    local.curves.isNeutral() && local.healing.isNeutral()) {
                     continue
                 }
 
@@ -119,6 +133,9 @@ class PreviewRenderer : Closeable {
                 FilterMath.applyInPlace(edited, local.filter)
                 PhotoEffectsMath.applyInPlace(edited, width, height, local.effects)
                 ColorGradingMath.applyInPlace(edited, local.colorGrading)
+                HslMath.applyInPlace(edited, local.hsl)
+                CurvesMath.applyInPlace(edited, local.curves)
+                HealingMath.applyInPlace(edited, width, height, local.healing)
 
                 for (y in 0 until height) {
                     val maskY = (y.toFloat() * selection.height / height)

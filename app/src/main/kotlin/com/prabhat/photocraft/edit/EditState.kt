@@ -7,6 +7,8 @@ data class EditState(
     val filter: FilterSettings = FilterSettings.NEUTRAL,
     val effects: PhotoEffects = PhotoEffects.NEUTRAL,
     val colorGrading: ColorGradingSettings = ColorGradingSettings.NEUTRAL,
+    val curves: CurvesSettings = CurvesSettings.NEUTRAL,
+    val healing: HealingSettings = HealingSettings.NEUTRAL,
     val masking: MaskingState = MaskingState()
 ) {
     fun isNeutral(): Boolean =
@@ -16,5 +18,7 @@ data class EditState(
             filter.isNeutral() &&
             effects.isNeutral() &&
             colorGrading.isNeutral() &&
+            curves.isNeutral() &&
+            healing.isNeutral() &&
             masking.isNeutral()
 }

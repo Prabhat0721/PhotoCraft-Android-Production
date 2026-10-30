@@ -15,8 +15,12 @@ import com.prabhat.photocraft.edit.AdjustmentMath
 import com.prabhat.photocraft.edit.ColorGradingMath
 import com.prabhat.photocraft.edit.ColorGradingSettings
 import com.prabhat.photocraft.edit.Adjustments
+import com.prabhat.photocraft.edit.CurvesMath
+import com.prabhat.photocraft.edit.CurvesSettings
 import com.prabhat.photocraft.edit.FilterMath
 import com.prabhat.photocraft.edit.FilterSettings
+import com.prabhat.photocraft.edit.HealingMath
+import com.prabhat.photocraft.edit.HealingSettings
 import com.prabhat.photocraft.edit.CropSelection
 import com.prabhat.photocraft.edit.MaskLayer
 import com.prabhat.photocraft.edit.MaskingState
@@ -216,18 +220,26 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
 
             val bitmap = working
             if (!request.adjustments.isNeutral() || !request.filter.isNeutral() ||
-                !request.colorGrading.isNeutral()) {
+                !request.colorGrading.isNeutral() || !request.curves.isNeutral()) {
                 val completed = applyEditsInTiles(
                     bitmap = bitmap,
                     adjustments = request.adjustments,
                     filter = request.filter,
                     colorGrading = request.colorGrading,
+                    curves = request.curves,
                     requestId = requestId,
                     onProgress = onProgress
                 )
                 if (!completed) {
                     return Result.Failure(FailureReason.CANCELLED)
                 }
+            }
+
+            if (!request.healing.isNeutral()) {
+                val pixels = IntArray(bitmap.width * bitmap.height)
+                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                HealingMath.applyInPlace(pixels, bitmap.width, bitmap.height, request.healing)
+                bitmap.setPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
             }
 
             if (!applyLocalMaskAdjustments(bitmap, request.masking, request.crop)) {
@@ -289,6 +301,7 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         adjustments: Adjustments,
         filter: FilterSettings,
         colorGrading: ColorGradingSettings,
+        curves: CurvesSettings,
         requestId: Int,
         onProgress: (Stage, Int) -> Unit
     ): Boolean {
@@ -313,6 +326,7 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
             AdjustmentMath.applyInPlace(buffer, adjustments, tile.pixelCount)
             FilterMath.applyInPlace(buffer, filter, tile.pixelCount)
             ColorGradingMath.applyInPlace(buffer, colorGrading, tile.pixelCount)
+            CurvesMath.applyInPlace(buffer, curves, tile.pixelCount)
             bitmap.setPixels(
                 buffer,
                 0,

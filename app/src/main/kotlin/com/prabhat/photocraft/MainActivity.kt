@@ -2047,8 +2047,11 @@ class MainActivity : Activity() {
             outputSize = selectedSize,
             filter = editingState.filter,
             colorGrading = editingState.state.colorGrading,
+            curves = editingState.state.curves,
+            healing = editingState.state.healing,
             sourceWidth = width,
-            sourceHeight = height
+            sourceHeight = height,
+            masking = editingState.state.masking
         )
     }
 
@@ -2240,6 +2243,7 @@ class MainActivity : Activity() {
         renderer.request(
             source, editingState.adjustments, editingState.filter,
             editingState.state.effects, editingState.state.colorGrading,
+            editingState.state.curves, editingState.state.healing,
             editingState.state.masking
         ) { result ->
             if (isDestroyed || isFinishing || sourceBitmap !== source) {

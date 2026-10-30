@@ -2,7 +2,9 @@ package com.prabhat.photocraft.export
 
 import com.prabhat.photocraft.edit.Adjustments
 import com.prabhat.photocraft.edit.CropSelection
+import com.prabhat.photocraft.edit.CurvesSettings
 import com.prabhat.photocraft.edit.FilterSettings
+import com.prabhat.photocraft.edit.HealingSettings
 import com.prabhat.photocraft.edit.MaskingState
 
 enum class ExportQuality(val jpegQuality: Int) {
@@ -54,6 +56,8 @@ data class ExportRequest(
     val outputSize: ExportSize,
     val filter: FilterSettings = FilterSettings.NEUTRAL,
     val colorGrading: com.prabhat.photocraft.edit.ColorGradingSettings = com.prabhat.photocraft.edit.ColorGradingSettings.NEUTRAL,
+    val curves: CurvesSettings = CurvesSettings.NEUTRAL,
+    val healing: HealingSettings = HealingSettings.NEUTRAL,
     val sourceWidth: Int = 0,
     val sourceHeight: Int = 0,
     val masking: MaskingState = MaskingState()

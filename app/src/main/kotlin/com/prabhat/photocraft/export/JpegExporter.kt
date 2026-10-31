@@ -330,7 +330,10 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
             )
             AdjustmentMath.applyInPlace(buffer, adjustments, tile.pixelCount)
             FilterMath.applyInPlace(buffer, filter, tile.pixelCount)
-            PhotoEffectsMath.applyInPlace(buffer, tile.width, tile.height, effects)
+            PhotoEffectsMath.applyInPlace(
+                buffer, tile.width, tile.height, effects,
+                tile.left, tile.top, bitmap.width, bitmap.height
+            )
             ColorGradingMath.applyInPlace(buffer, colorGrading, tile.pixelCount)
             CurvesMath.applyInPlace(buffer, curves, tile.pixelCount)
             bitmap.setPixels(
@@ -376,7 +379,8 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
                 )
                 FilterMath.applyInPlace(adjusted, layer.adjustments.filter, tile.pixelCount)
                 PhotoEffectsMath.applyInPlace(
-                    adjusted, tile.width, tile.height, layer.adjustments.effects
+                    adjusted, tile.width, tile.height, layer.adjustments.effects,
+                    tile.left, tile.top, bitmap.width, bitmap.height
                 )
                 ColorGradingMath.applyInPlace(
                     adjusted, layer.adjustments.colorGrading, tile.pixelCount

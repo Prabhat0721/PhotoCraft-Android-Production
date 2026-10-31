@@ -41,10 +41,14 @@ object PhotoEffectsMath {
         pixels: IntArray,
         width: Int,
         height: Int,
-        effects: PhotoEffects
+        effects: PhotoEffects,
+        offsetX: Int = 0,
+        offsetY: Int = 0,
+        fullWidth: Int = width,
+        fullHeight: Int = height
     ) {
-        require(width > 0 && height > 0 && width.toLong() * height == pixels.size.toLong()) {
-            "Pixel dimensions must match the buffer."
+        require(width > 0 && height > 0 && pixels.size >= width * height) {
+            "Pixel buffer must be at least width * height."
         }
         if (effects.isNeutral()) return
 
@@ -67,10 +71,13 @@ object PhotoEffectsMath {
             applyFade(pixels, effects.fade)
         }
         if (effects.vignette != 0) {
-            applyVignette(pixels, width, height, effects.vignette)
+            applyVignette(
+                pixels, width, height, effects.vignette,
+                offsetX, offsetY, fullWidth, fullHeight
+            )
         }
         if (effects.grain > 0) {
-            applyGrain(pixels, width, height, effects.grain)
+            applyGrain(pixels, width, height, effects.grain, offsetX, offsetY)
         }
     }
 
@@ -103,7 +110,14 @@ object PhotoEffectsMath {
         }
     }
 
-    private fun applyGrain(p: IntArray, w: Int, h: Int, amount: Int) {
+    private fun applyGrain(
+        p: IntArray,
+        w: Int,
+        h: Int,
+        amount: Int,
+        offsetX: Int = 0,
+        offsetY: Int = 0
+    ) {
         val strength = (amount / 100f).coerceIn(0f, 1f)
         if (strength == 0f) return
 
@@ -119,7 +133,8 @@ object PhotoEffectsMath {
                 val luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b
                 val midtone = (1f - abs(luminance - 0.5f) * 1.4f)
                     .coerceIn(0.25f, 1f)
-                val noise = hashNoise(x, y) * 0.16f * strength * midtone
+                val noise = hashNoise(offsetX + x, offsetY + y) *
+                    0.16f * strength * midtone
                 p[i] = (alpha shl 24) or
                     (clamp((r + noise) * 255f) shl 16) or
                     (clamp((g + noise) * 255f) shl 8) or
@@ -251,16 +266,27 @@ object PhotoEffectsMath {
         }
     }
 
-    private fun applyVignette(p: IntArray, w: Int, h: Int, amount: Int) {
+    private fun applyVignette(
+        p: IntArray,
+        w: Int,
+        h: Int,
+        amount: Int,
+        offsetX: Int = 0,
+        offsetY: Int = 0,
+        fullWidth: Int = w,
+        fullHeight: Int = h
+    ) {
         val strength = amount / 100f * 0.72f
-        val cx = (w - 1) / 2f
-        val cy = (h - 1) / 2f
+        val cx = (fullWidth - 1) / 2f
+        val cy = (fullHeight - 1) / 2f
         val maxDist = max(1f, sqrt(cx * cx + cy * cy))
         for (y in 0 until h) for (x in 0 until w) {
             val i = y * w + x
             val c = p[i]
             if ((c ushr 24) == 0) continue
-            val d = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) / maxDist
+            val gx = (offsetX + x).toFloat()
+            val gy = (offsetY + y).toFloat()
+            val d = sqrt((gx - cx) * (gx - cx) + (gy - cy) * (gy - cy)) / maxDist
             val edge = (d * d).coerceIn(0f, 1f)
             val factor = (1f - strength * edge).coerceIn(0.15f, 1.85f)
             p[i] = (c and -0x1000000) or

@@ -1719,6 +1719,9 @@ class MainActivity : Activity() {
             )
             editingState.updateMasking(updated, label)
             refreshMaskStatus()
+            if (!editingState.state.masking.selected().adjustments.isNeutral()) {
+                requestPreviewRender()
+            }
             syncUiState()
         }
 
@@ -1770,6 +1773,11 @@ class MainActivity : Activity() {
                 editingState.updateMasking(updated, "Auto Select $type")
                 refreshMaskStatus()
                 rebuildMaskAdjustmentControls(maskAdjustments)
+                if (!updated.subject.adjustments.isNeutral() ||
+                    !updated.background.adjustments.isNeutral()
+                ) {
+                    requestPreviewRender()
+                }
                 syncUiState()
             }
 
@@ -1800,6 +1808,11 @@ class MainActivity : Activity() {
                     editingState.updateMasking(latest, "Auto Select $type")
                     refreshMaskStatus()
                     rebuildMaskAdjustmentControls(maskAdjustments)
+                    if (!latest.subject.adjustments.isNeutral() ||
+                        !latest.background.adjustments.isNeutral()
+                    ) {
+                        requestPreviewRender()
+                    }
                     syncUiState()
                 } catch (error: Exception) {
                     statusText.text =
@@ -1841,6 +1854,9 @@ class MainActivity : Activity() {
                 masking.withLayer(updatedLayer), "Invert Mask"
             )
             refreshMaskStatus()
+            if (!updatedLayer.adjustments.isNeutral()) {
+                requestPreviewRender()
+            }
             syncUiState()
         }
 
@@ -1987,6 +2003,11 @@ class MainActivity : Activity() {
                             android.view.MotionEvent.ACTION_UP -> {
                                 editingState.endGesture()
                                 refreshMaskStatus()
+                                if (!editingState.state.masking
+                                        .selected().adjustments.isNeutral()
+                                ) {
+                                    requestPreviewRender()
+                                }
                                 syncUiState()
                             }
                             android.view.MotionEvent.ACTION_CANCEL -> {

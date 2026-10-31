@@ -4,8 +4,10 @@ import kotlin.math.roundToInt
 
 object M5StateCodec {
     const val LEGACY_VALUE_COUNT = 18
-    const val VALUE_COUNT = 53
+    const val PREVIOUS_VALUE_COUNT = 53
+    const val VALUE_COUNT = 193
     private const val ADJUSTMENT_COUNT = 11
+    private const val MAX_CURVE_POINTS = 16
     private const val BASIS_POINT_SCALE = 10000f
 
     fun encode(state: EditState): IntArray {
@@ -37,13 +39,46 @@ object M5StateCodec {
         }
         values[i++] = state.colorGrading.balance
         values[i] = state.colorGrading.blending
+
+        i = PREVIOUS_VALUE_COUNT
+        val effects = state.effects
+        values[i++] = effects.sharpness
+        values[i++] = effects.texture
+        values[i++] = effects.details
+        values[i++] = effects.noiseReduction
+        values[i++] = effects.vignette
+        values[i++] = effects.dehaze
+        values[i++] = effects.fade
+        values[i++] = effects.grain
+
+        val curves = state.curves
+        for (curve in listOf(curves.rgb, curves.red, curves.green, curves.blue)) {
+            val points = curve.points
+                .sortedBy { it.x }
+                .take(MAX_CURVE_POINTS)
+            values[i++] = points.size
+            for (pointIndex in 0 until MAX_CURVE_POINTS) {
+                if (pointIndex < points.size) {
+                    values[i++] = toBasisPoints(points[pointIndex].x)
+                    values[i++] = toBasisPoints(points[pointIndex].y)
+                } else {
+                    values[i++] = 0
+                    values[i++] = 0
+                }
+            }
+        }
         return values
     }
 
     fun decode(values: IntArray?): EditState? {
-        if (values == null ||
-            (values.size != LEGACY_VALUE_COUNT && values.size != VALUE_COUNT)
-        ) return null
+        if (values == null) return null
+        val size = values.size
+        if (size != LEGACY_VALUE_COUNT &&
+            size != PREVIOUS_VALUE_COUNT &&
+            size != VALUE_COUNT
+        ) {
+            return null
+        }
 
         return try {
             val adjustments = Adjustments.fromIntArray(
@@ -63,7 +98,7 @@ object M5StateCodec {
             )
 
             var grading = ColorGradingSettings.NEUTRAL
-            if (values.size == VALUE_COUNT) {
+            if (size >= PREVIOUS_VALUE_COUNT) {
                 var i = LEGACY_VALUE_COUNT
                 val adjustmentsByColor = HslColor.entries.associateWith {
                     HslAdjustment(
@@ -102,12 +137,59 @@ object M5StateCodec {
                 )
             }
 
+            var effects = PhotoEffects.NEUTRAL
+            var curves = CurvesSettings.NEUTRAL
+            if (size >= VALUE_COUNT) {
+                var i = PREVIOUS_VALUE_COUNT
+                effects = PhotoEffects(
+                    sharpness = values[i++].coerceIn(-100, 100),
+                    texture = values[i++].coerceIn(-100, 100),
+                    details = values[i++].coerceIn(-100, 100),
+                    noiseReduction = values[i++].coerceIn(-100, 100),
+                    vignette = values[i++].coerceIn(-100, 100),
+                    dehaze = values[i++].coerceIn(-100, 100),
+                    fade = values[i++].coerceIn(-100, 100),
+                    grain = values[i++].coerceIn(0, 100)
+                )
+
+                fun readCurve(): CurveSettings {
+                    val count = values[i++].coerceIn(0, MAX_CURVE_POINTS)
+                    val points = ArrayList<CurvePoint>(count)
+                    for (pointIndex in 0 until MAX_CURVE_POINTS) {
+                        val x = values[i++]
+                        val y = values[i++]
+                        if (pointIndex < count) {
+                            points.add(
+                                CurvePoint(
+                                    x = (x / BASIS_POINT_SCALE).coerceIn(0f, 1f),
+                                    y = (y / BASIS_POINT_SCALE).coerceIn(0f, 1f)
+                                )
+                            )
+                        }
+                    }
+                    return if (points.size >= 2) {
+                        CurveSettings(points)
+                    } else {
+                        CurveSettings.NEUTRAL
+                    }
+                }
+
+                curves = CurvesSettings(
+                    rgb = readCurve(),
+                    red = readCurve(),
+                    green = readCurve(),
+                    blue = readCurve()
+                )
+            }
+
             EditState(
                 adjustments = adjustments,
                 crop = crop,
                 cropRatio = ratio,
                 filter = filterSettings,
-                colorGrading = grading
+                effects = effects,
+                colorGrading = grading,
+                curves = curves
             )
         } catch (_: IllegalArgumentException) {
             null
@@ -129,6 +211,7 @@ object M5StateCodec {
 
         val recordSize = when {
             values.size % VALUE_COUNT == 0 -> VALUE_COUNT
+            values.size % PREVIOUS_VALUE_COUNT == 0 -> PREVIOUS_VALUE_COUNT
             values.size % LEGACY_VALUE_COUNT == 0 -> LEGACY_VALUE_COUNT
             else -> return emptyList()
         }

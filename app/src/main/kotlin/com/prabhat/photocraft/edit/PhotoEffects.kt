@@ -11,18 +11,25 @@ data class PhotoEffects(
     val details: Int = 0,
     val noiseReduction: Int = 0,
     val vignette: Int = 0,
-    val dehaze: Int = 0
+    val dehaze: Int = 0,
+    val fade: Int = 0,
+    val grain: Int = 0
 ) {
     init {
-        require(listOf(sharpness, texture, details, noiseReduction, vignette, dehaze)
-            .all { it in -100..100 }) {
+        require(
+            listOf(
+                sharpness, texture, details, noiseReduction,
+                vignette, dehaze, fade, grain
+            ).all { it in -100..100 }
+        ) {
             "Effect values must be between -100 and 100."
         }
     }
 
     fun isNeutral(): Boolean =
         sharpness == 0 && texture == 0 && details == 0 &&
-            noiseReduction == 0 && vignette == 0 && dehaze == 0
+            noiseReduction == 0 && vignette == 0 && dehaze == 0 &&
+            fade == 0 && grain == 0
 
     companion object {
         val NEUTRAL = PhotoEffects()
@@ -56,9 +63,76 @@ object PhotoEffectsMath {
         if (effects.dehaze != 0) {
             applyDehaze(pixels, width, height, effects.dehaze)
         }
+        if (effects.fade != 0) {
+            applyFade(pixels, effects.fade)
+        }
         if (effects.vignette != 0) {
             applyVignette(pixels, width, height, effects.vignette)
         }
+        if (effects.grain > 0) {
+            applyGrain(pixels, width, height, effects.grain)
+        }
+    }
+
+    private fun applyFade(p: IntArray, amount: Int) {
+        val strength = (amount / 100f).coerceIn(-1f, 1f)
+        if (strength == 0f) return
+
+        for (i in p.indices) {
+            val c = p[i]
+            val alpha = c ushr 24
+            if (alpha == 0) continue
+            val r = ((c shr 16) and 255) / 255f
+            val g = ((c shr 8) and 255) / 255f
+            val b = (c and 255) / 255f
+
+            fun fadeChannel(value: Float): Float {
+                return if (strength > 0f) {
+                    value * (1f - 0.30f * strength) + 0.16f * strength
+                } else {
+                    val deepen = -strength
+                    val contrasted = (value - 0.5f) * (1f + 0.45f * deepen) + 0.5f
+                    (contrasted - 0.06f * deepen).coerceIn(0f, 1f)
+                }
+            }
+
+            p[i] = (alpha shl 24) or
+                (clamp(fadeChannel(r) * 255f) shl 16) or
+                (clamp(fadeChannel(g) * 255f) shl 8) or
+                clamp(fadeChannel(b) * 255f)
+        }
+    }
+
+    private fun applyGrain(p: IntArray, w: Int, h: Int, amount: Int) {
+        val strength = (amount / 100f).coerceIn(0f, 1f)
+        if (strength == 0f) return
+
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val i = y * w + x
+                val c = p[i]
+                val alpha = c ushr 24
+                if (alpha == 0) continue
+                val r = ((c shr 16) and 255) / 255f
+                val g = ((c shr 8) and 255) / 255f
+                val b = (c and 255) / 255f
+                val luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                val midtone = (1f - abs(luminance - 0.5f) * 1.4f)
+                    .coerceIn(0.25f, 1f)
+                val noise = hashNoise(x, y) * 0.16f * strength * midtone
+                p[i] = (alpha shl 24) or
+                    (clamp((r + noise) * 255f) shl 16) or
+                    (clamp((g + noise) * 255f) shl 8) or
+                    clamp((b + noise) * 255f)
+            }
+        }
+    }
+
+    private fun hashNoise(x: Int, y: Int): Float {
+        var value = x * 374761393 + y * 668265263
+        value = (value xor (value shr 13)) * 1274126177
+        value = value xor (value shr 16)
+        return (value and 0xFFFF) / 32767.5f - 1f
     }
 
     private fun applyDehaze(p: IntArray, w: Int, h: Int, amount: Int) {

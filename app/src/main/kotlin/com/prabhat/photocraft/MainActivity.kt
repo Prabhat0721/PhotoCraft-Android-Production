@@ -676,6 +676,18 @@ class MainActivity : Activity() {
         ) { value ->
             updateEffects(editingState.state.effects.copy(dehaze = value))
         }
+        addAdvancedSlider(
+            effectsControls, "effect_fade", "Fade",
+            -100, 100, editingState.state.effects.fade
+        ) { value ->
+            updateEffects(editingState.state.effects.copy(fade = value))
+        }
+        addAdvancedSlider(
+            effectsControls, "effect_grain", "Grain",
+            0, 100, editingState.state.effects.grain
+        ) { value ->
+            updateEffects(editingState.state.effects.copy(grain = value))
+        }
 
         buildCurveSection(effectsControls)
         buildHealingSection(effectsControls)
@@ -1081,6 +1093,8 @@ class MainActivity : Activity() {
         setValue("effect_vignette", effects.vignette, -100)
         setValue("effect_noise", effects.noiseReduction, -100)
         setValue("effect_dehaze", effects.dehaze, -100)
+        setValue("effect_fade", effects.fade, -100)
+        setValue("effect_grain", effects.grain, 0)
         curveEditor?.setCurve(curveForChannel(editingState.state.curves, curveChannel))
     }
 
@@ -1479,7 +1493,14 @@ class MainActivity : Activity() {
             }
         }
 
-        fun addSlider(title: String, initial: Int, onChanged: (Int) -> Unit) {
+        fun addSlider(
+            title: String,
+            initial: Int,
+            minimum: Int = -100,
+            maximum: Int = 100,
+            onChanged: (Int) -> Unit
+        ) {
+            val range = maximum - minimum
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, dp(3), 0, dp(3))
@@ -1489,8 +1510,8 @@ class MainActivity : Activity() {
                 setTextColor(getColor(R.color.text_secondary))
             }
             val seek = SeekBar(this).apply {
-                max = 200
-                progress = (initial + 100).coerceIn(0, 200)
+                max = range
+                progress = (initial - minimum).coerceIn(0, range)
                 contentDescription = "${layer.type.name} $title"
             }
 
@@ -1503,7 +1524,7 @@ class MainActivity : Activity() {
                 override fun onProgressChanged(
                     bar: SeekBar?, progress: Int, fromUser: Boolean
                 ) {
-                    val value = progress - 100
+                    val value = progress + minimum
                     showValue(value)
                     if (!fromUser || !canEditPhoto()) return
                     onChanged(value)
@@ -1584,6 +1605,12 @@ class MainActivity : Activity() {
         }
         addSlider("Dehaze", layer.adjustments.effects.dehaze) { value ->
             applyLocal { it.copy(effects = it.effects.copy(dehaze = value)) }
+        }
+        addSlider("Fade", layer.adjustments.effects.fade) { value ->
+            applyLocal { it.copy(effects = it.effects.copy(fade = value)) }
+        }
+        addSlider("Grain", layer.adjustments.effects.grain, 0, 100) { value ->
+            applyLocal { it.copy(effects = it.effects.copy(grain = value)) }
         }
         addSlider("Vignette", layer.adjustments.effects.vignette) { value ->
             applyLocal { it.copy(effects = it.effects.copy(vignette = value)) }

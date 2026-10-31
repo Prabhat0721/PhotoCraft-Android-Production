@@ -6,6 +6,7 @@ import com.prabhat.photocraft.edit.CurvesSettings
 import com.prabhat.photocraft.edit.FilterSettings
 import com.prabhat.photocraft.edit.HealingSettings
 import com.prabhat.photocraft.edit.MaskingState
+import com.prabhat.photocraft.edit.PhotoEffects
 
 enum class ExportQuality(val jpegQuality: Int) {
     HIGH(95),
@@ -55,6 +56,7 @@ data class ExportRequest(
     val quality: ExportQuality,
     val outputSize: ExportSize,
     val filter: FilterSettings = FilterSettings.NEUTRAL,
+    val effects: PhotoEffects = PhotoEffects.NEUTRAL,
     val colorGrading: com.prabhat.photocraft.edit.ColorGradingSettings = com.prabhat.photocraft.edit.ColorGradingSettings.NEUTRAL,
     val curves: CurvesSettings = CurvesSettings.NEUTRAL,
     val healing: HealingSettings = HealingSettings.NEUTRAL,

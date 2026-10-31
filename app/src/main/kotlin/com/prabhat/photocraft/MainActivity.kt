@@ -49,6 +49,10 @@ import com.prabhat.photocraft.edit.HslAdjustment
 import com.prabhat.photocraft.edit.HslSettings
 import com.prabhat.photocraft.edit.ToneGrade
 import com.prabhat.photocraft.edit.ColorGradingSettings
+import com.prabhat.photocraft.edit.CurveSettings
+import com.prabhat.photocraft.edit.CurvesSettings
+import com.prabhat.photocraft.edit.HealingSettings
+import com.prabhat.photocraft.edit.HealingSpot
 import com.prabhat.photocraft.edit.PhotoEffects
 import com.prabhat.photocraft.edit.M5StateCodec
 import com.prabhat.photocraft.export.DestinationAttestation
@@ -71,6 +75,7 @@ import com.prabhat.photocraft.ui.AdjustmentRowView
 import com.prabhat.photocraft.ui.AdaptivePreviewLayout
 import com.prabhat.photocraft.ui.CropOverlayView
 import com.prabhat.photocraft.ui.CropPreviewView
+import com.prabhat.photocraft.ui.CurveEditorView
 import com.prabhat.photocraft.util.PhotoRestore
 import kotlin.math.roundToInt
 
@@ -81,6 +86,13 @@ class MainActivity : Activity() {
         EFFECTS,
         MASKING,
         CROP
+    }
+
+    private enum class CurveChannel(val label: String) {
+        RGB("RGB"),
+        RED("Red"),
+        GREEN("Green"),
+        BLUE("Blue")
     }
 
     private lateinit var appRoot: FrameLayout
@@ -151,6 +163,12 @@ class MainActivity : Activity() {
     private val advancedSeekBars = LinkedHashMap<String, SeekBar>()
     private val advancedLabels = LinkedHashMap<String, TextView>()
     private val advancedLabelTitles = LinkedHashMap<String, String>()
+    private var curveEditor: CurveEditorView? = null
+    private var curveChannel = CurveChannel.RGB
+    private val curveChannelButtons = LinkedHashMap<CurveChannel, Button>()
+    private var healingToolActive = false
+    private var healingRadius = 0.05f
+    private var healingToggleButton: Button? = null
     private lateinit var errorPanel: View
     private lateinit var errorText: TextView
     private lateinit var errorRetryButton: Button
@@ -659,7 +677,258 @@ class MainActivity : Activity() {
             updateEffects(editingState.state.effects.copy(dehaze = value))
         }
 
+        buildCurveSection(effectsControls)
+        buildHealingSection(effectsControls)
+
         applyAdvancedControlsFromState()
+    }
+
+    private fun curveForChannel(
+        curves: CurvesSettings,
+        channel: CurveChannel
+    ): CurveSettings = when (channel) {
+        CurveChannel.RGB -> curves.rgb
+        CurveChannel.RED -> curves.red
+        CurveChannel.GREEN -> curves.green
+        CurveChannel.BLUE -> curves.blue
+    }
+
+    private fun withCurveChannel(
+        curves: CurvesSettings,
+        channel: CurveChannel,
+        curve: CurveSettings
+    ): CurvesSettings = when (channel) {
+        CurveChannel.RGB -> curves.copy(rgb = curve)
+        CurveChannel.RED -> curves.copy(red = curve)
+        CurveChannel.GREEN -> curves.copy(green = curve)
+        CurveChannel.BLUE -> curves.copy(blue = curve)
+    }
+
+    private fun updateCurveChannelButtons() {
+        for ((channel, button) in curveChannelButtons) {
+            val selected = channel == curveChannel
+            button.setTextColor(
+                getColor(if (selected) R.color.accent else R.color.text_secondary)
+            )
+            button.alpha = if (selected) 1f else 0.7f
+        }
+        val color = when (curveChannel) {
+            CurveChannel.RGB -> getColor(R.color.text_primary)
+            CurveChannel.RED -> 0xFFFF5A5A.toInt()
+            CurveChannel.GREEN -> 0xFF5AE07A.toInt()
+            CurveChannel.BLUE -> 0xFF5AA8FF.toInt()
+        }
+        curveEditor?.setCurveColor(color)
+    }
+
+    private fun buildCurveSection(container: LinearLayout) {
+        container.addView(TextView(this).apply {
+            text = "CURVES"
+            textSize = 12f
+            letterSpacing = 0.08f
+            setTextColor(getColor(R.color.text_secondary))
+            setPadding(0, dp(14), 0, dp(4))
+        })
+
+        val channelRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        curveChannelButtons.clear()
+        for (channel in CurveChannel.entries) {
+            val button = Button(this).apply {
+                text = channel.label
+                textSize = 12f
+                minWidth = 0
+                minHeight = 0
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                contentDescription = "Edit ${channel.label} curve"
+            }
+            button.setOnClickListener {
+                curveChannel = channel
+                updateCurveChannelButtons()
+                curveEditor?.setCurve(
+                    curveForChannel(editingState.state.curves, channel)
+                )
+            }
+            curveChannelButtons[channel] = button
+            channelRow.addView(
+                button,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            )
+        }
+        container.addView(
+            channelRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val editor = CurveEditorView(this).apply {
+            setCurve(curveForChannel(editingState.state.curves, curveChannel))
+        }
+        editor.setOnCurveChangedListener { curve ->
+            if (!canEditPhoto()) {
+                return@setOnCurveChangedListener
+            }
+            val updated = withCurveChannel(
+                editingState.state.curves, curveChannel, curve
+            )
+            if (editingState.updateCurves(updated, "Curves")) {
+                clearExportStatus()
+                requestPreviewRender()
+                syncUiState()
+            }
+        }
+        curveEditor = editor
+        container.addView(
+            editor,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(200)
+            )
+        )
+
+        val resetButton = Button(this).apply {
+            text = "Reset Curve"
+            setOnClickListener {
+                if (!canEditPhoto()) {
+                    return@setOnClickListener
+                }
+                val updated = withCurveChannel(
+                    editingState.state.curves, curveChannel, CurveSettings.NEUTRAL
+                )
+                if (editingState.updateCurves(updated, "Reset Curve")) {
+                    curveEditor?.setCurve(CurveSettings.NEUTRAL)
+                    clearExportStatus()
+                    requestPreviewRender()
+                    syncUiState()
+                }
+            }
+        }
+        container.addView(
+            resetButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        updateCurveChannelButtons()
+    }
+
+    private fun buildHealingSection(container: LinearLayout) {
+        container.addView(TextView(this).apply {
+            text = "HEALING"
+            textSize = 12f
+            letterSpacing = 0.08f
+            setTextColor(getColor(R.color.text_secondary))
+            setPadding(0, dp(14), 0, dp(4))
+        })
+
+        val toggle = Button(this).apply {
+            text = if (healingToolActive) {
+                "Healing Tool: On"
+            } else {
+                "Healing Tool: Off"
+            }
+            setOnClickListener {
+                if (!canEditPhoto()) {
+                    return@setOnClickListener
+                }
+                healingToolActive = !healingToolActive
+                text = if (healingToolActive) {
+                    "Healing Tool: On — tap the photo to heal"
+                } else {
+                    "Healing Tool: Off"
+                }
+            }
+        }
+        healingToggleButton = toggle
+        container.addView(
+            toggle,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val radiusLabel = TextView(this).apply {
+            textSize = 13f
+            setTextColor(getColor(R.color.text_secondary))
+            text = "Spot Size: ${(healingRadius * 100).toInt()}"
+        }
+        val radiusSeek = SeekBar(this).apply {
+            max = 100
+            progress = ((healingRadius - 0.01f) / 0.14f * 100f)
+                .toInt().coerceIn(0, 100)
+            contentDescription = "Healing spot size"
+        }
+        radiusSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(
+                bar: SeekBar?, progress: Int, fromUser: Boolean
+            ) {
+                healingRadius = 0.01f + progress / 100f * 0.14f
+                radiusLabel.text = "Spot Size: ${(healingRadius * 100).toInt()}"
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+        })
+        container.addView(radiusLabel, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        container.addView(radiusSeek, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val undoButton = Button(this).apply {
+            text = "Undo Spot"
+            setOnClickListener {
+                if (!canEditPhoto()) {
+                    return@setOnClickListener
+                }
+                val spots = editingState.state.healing.spots
+                if (spots.isNotEmpty()) {
+                    val updated = HealingSettings(spots.dropLast(1))
+                    if (editingState.updateHealing(updated, "Undo Heal Spot")) {
+                        clearExportStatus()
+                        requestPreviewRender()
+                        syncUiState()
+                    }
+                }
+            }
+        }
+        val clearButton = Button(this).apply {
+            text = "Clear All"
+            setOnClickListener {
+                if (!canEditPhoto()) {
+                    return@setOnClickListener
+                }
+                if (editingState.state.healing.spots.isNotEmpty()) {
+                    if (editingState.updateHealing(HealingSettings.NEUTRAL, "Clear Heal Spots")) {
+                        clearExportStatus()
+                        requestPreviewRender()
+                        syncUiState()
+                    }
+                }
+            }
+        }
+        actionRow.addView(undoButton, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ))
+        actionRow.addView(clearButton, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ))
+        container.addView(actionRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
     }
 
     private fun addAdvancedSlider(
@@ -812,6 +1081,7 @@ class MainActivity : Activity() {
         setValue("effect_vignette", effects.vignette, -100)
         setValue("effect_noise", effects.noiseReduction, -100)
         setValue("effect_dehaze", effects.dehaze, -100)
+        curveEditor?.setCurve(curveForChannel(editingState.state.curves, curveChannel))
     }
 
     private fun setupFilterControls() {
@@ -1571,7 +1841,27 @@ class MainActivity : Activity() {
 
         preview.setMaskTouchListener { x, y, action ->
             val bitmap = sourceBitmap
-            if (selectedCategory != EditorCategory.MASKING || compareHeld || bitmap == null) {
+            if (healingToolActive && bitmap != null) {
+                if (action == android.view.MotionEvent.ACTION_DOWN) {
+                    val nx = (x / bitmap.width).coerceIn(0f, 1f)
+                    val ny = (y / bitmap.height).coerceIn(0f, 1f)
+                    editingState.beginGesture()
+                    editingState.updateHealing(
+                        editingState.state.healing.copy(
+                            spots = editingState.state.healing.spots +
+                                HealingSpot(nx, ny, healingRadius)
+                        ),
+                        "Heal Spot"
+                    )
+                    editingState.endGesture()
+                    clearExportStatus()
+                    requestPreviewRender()
+                    syncUiState()
+                }
+                true
+            } else if (selectedCategory != EditorCategory.MASKING ||
+                compareHeld || bitmap == null
+            ) {
                 false
             } else {
                 val type = editingState.state.masking.selectedMask
@@ -2268,6 +2558,7 @@ class MainActivity : Activity() {
             quality = selectedQuality,
             outputSize = selectedSize,
             filter = editingState.filter,
+            effects = editingState.state.effects,
             colorGrading = editingState.state.colorGrading,
             curves = editingState.state.curves,
             healing = editingState.state.healing,

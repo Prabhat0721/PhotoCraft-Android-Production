@@ -21,6 +21,7 @@ import com.prabhat.photocraft.edit.FilterMath
 import com.prabhat.photocraft.edit.FilterSettings
 import com.prabhat.photocraft.edit.HealingMath
 import com.prabhat.photocraft.edit.HealingSettings
+import com.prabhat.photocraft.edit.PhotoEffects
 import com.prabhat.photocraft.edit.PhotoEffectsMath
 import com.prabhat.photocraft.edit.CropSelection
 import com.prabhat.photocraft.edit.MaskLayer
@@ -221,11 +222,13 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
 
             val bitmap = working
             if (!request.adjustments.isNeutral() || !request.filter.isNeutral() ||
-                !request.colorGrading.isNeutral() || !request.curves.isNeutral()) {
+                !request.effects.isNeutral() || !request.colorGrading.isNeutral() ||
+                !request.curves.isNeutral()) {
                 val completed = applyEditsInTiles(
                     bitmap = bitmap,
                     adjustments = request.adjustments,
                     filter = request.filter,
+                    effects = request.effects,
                     colorGrading = request.colorGrading,
                     curves = request.curves,
                     requestId = requestId,
@@ -301,6 +304,7 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         bitmap: Bitmap,
         adjustments: Adjustments,
         filter: FilterSettings,
+        effects: PhotoEffects,
         colorGrading: ColorGradingSettings,
         curves: CurvesSettings,
         requestId: Int,
@@ -326,6 +330,7 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
             )
             AdjustmentMath.applyInPlace(buffer, adjustments, tile.pixelCount)
             FilterMath.applyInPlace(buffer, filter, tile.pixelCount)
+            PhotoEffectsMath.applyInPlace(buffer, tile.width, tile.height, effects)
             ColorGradingMath.applyInPlace(buffer, colorGrading, tile.pixelCount)
             CurvesMath.applyInPlace(buffer, curves, tile.pixelCount)
             bitmap.setPixels(

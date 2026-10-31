@@ -100,6 +100,24 @@ class EditingState(initial: EditState = EditState()) {
         return commit(next, label)
     }
 
+    fun updateCurves(
+        curves: CurvesSettings,
+        label: String = "Curves"
+    ): Boolean {
+        val next = state.copy(curves = curves)
+        if (next == state) return false
+        return commit(next, label)
+    }
+
+    fun updateHealing(
+        healing: HealingSettings,
+        label: String = "Healing"
+    ): Boolean {
+        val next = state.copy(healing = healing)
+        if (next == state) return false
+        return commit(next, label)
+    }
+
     fun updateMasking(
         masking: MaskingState,
         label: String = "Masking"

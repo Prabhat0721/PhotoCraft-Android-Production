@@ -3,7 +3,7 @@ package com.prabhat.photocraft.edit
 import android.os.Bundle
 
 object EditStateBundleCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val MASK_MAX_EDGE = 192
     private const val HSL_VALUE_COUNT = 24
     private const val GRADE_VALUE_COUNT = 9
@@ -28,9 +28,9 @@ object EditStateBundleCodec {
     }
 
     fun decode(bundle: Bundle?): EditState? {
-        if (bundle == null || bundle.getInt("version", 0) != VERSION) {
-            return null
-        }
+        if (bundle == null) return null
+        val version = bundle.getInt("version", 0)
+        if (version !in 1..VERSION) return null
         return try {
             val adjustments = Adjustments.fromIntArray(
                 bundle.getIntArray("adjustments") ?: return null
@@ -237,6 +237,12 @@ object EditStateBundleCodec {
         bundle.putFloat("maskBrushSize", masking.brushSize)
         bundle.putFloat("maskBrushFeather", masking.brushFeather)
         bundle.putFloat("maskBrushFlow", masking.brushFlow)
+        bundle.putInt("maskColorTarget", masking.colorTarget ?: -1)
+        bundle.putFloat("maskColorTolerance", masking.colorTolerance)
+        bundle.putFloat("maskColorFeather", masking.colorFeather)
+        bundle.putFloat("maskLuminanceTarget", masking.luminanceTarget ?: -1f)
+        bundle.putFloat("maskLuminanceTolerance", masking.luminanceTolerance)
+        bundle.putFloat("maskLuminanceFeather", masking.luminanceFeather)
         bundle.putInt("maskLayerCount", masking.layers.size)
         for ((index, layer) in masking.layers.withIndex()) {
             val layerBundle = Bundle()
@@ -298,7 +304,14 @@ object EditStateBundleCodec {
             ) ?: MaskType.SUBJECT,
             brushSize = bundle.getFloat("maskBrushSize", 40f),
             brushFeather = bundle.getFloat("maskBrushFeather", 50f),
-            brushFlow = bundle.getFloat("maskBrushFlow", 100f)
+            brushFlow = bundle.getFloat("maskBrushFlow", 100f),
+            colorTarget = bundle.getInt("maskColorTarget", -1).takeIf { it >= 0 },
+            colorTolerance = bundle.getFloat("maskColorTolerance", 0.22f),
+            colorFeather = bundle.getFloat("maskColorFeather", 0.35f),
+            luminanceTarget = bundle.getFloat("maskLuminanceTarget", -1f)
+                .takeIf { it >= 0f },
+            luminanceTolerance = bundle.getFloat("maskLuminanceTolerance", 0.22f),
+            luminanceFeather = bundle.getFloat("maskLuminanceFeather", 0.35f)
         )
     }
 

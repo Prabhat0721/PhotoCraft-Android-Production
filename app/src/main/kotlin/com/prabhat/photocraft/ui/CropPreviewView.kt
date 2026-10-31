@@ -11,6 +11,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.MotionEvent
 import com.prabhat.photocraft.edit.CropSelection
+import com.prabhat.photocraft.edit.HealingSpot
 import com.prabhat.photocraft.edit.MaskSelection
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -31,6 +32,45 @@ class CropPreviewView @JvmOverloads constructor(
     private var maskSelection: MaskSelection? = null
     private var overlayBitmap: Bitmap? = null
     private var maskTouchListener: ((Float, Float, Int) -> Boolean)? = null
+    private var healingSpots: List<HealingSpot> = emptyList()
+    private var showHealingOverlay = false
+    private var brushCursorVisible = false
+    private var brushCursorX = 0f
+    private var brushCursorY = 0f
+    private var brushCursorRadius = 0f
+    private val healingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = Color.argb(230, 255, 210, 80)
+    }
+    private val healingFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(55, 255, 210, 80)
+    }
+    private val brushCursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        color = Color.WHITE
+    }
+    private val brushCursorShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        color = Color.argb(150, 0, 0, 0)
+    }
+
+    fun setHealingSpots(spots: List<HealingSpot>, show: Boolean) {
+        healingSpots = spots
+        showHealingOverlay = show
+        invalidate()
+    }
+
+    fun setBrushCursor(x: Float, y: Float, radius: Float, visible: Boolean) {
+        brushCursorX = x
+        brushCursorY = y
+        brushCursorRadius = radius
+        brushCursorVisible = visible
+        invalidate()
+    }
 
     fun setMaskTouchListener(listener: ((Float, Float, Int) -> Boolean)?) {
         maskTouchListener = listener
@@ -136,6 +176,24 @@ class CropPreviewView @JvmOverloads constructor(
             canvas.drawBitmap(
                 overlay, Rect(ol, ot, oright, obottom), destinationRect, overlayPaint
             )
+        }
+
+        if (showHealingOverlay && healingSpots.isNotEmpty()) {
+            val minDimension = min(destinationRect.width(), destinationRect.height())
+            for (spot in healingSpots) {
+                val cx = destinationRect.left + spot.x * destinationRect.width()
+                val cy = destinationRect.top + spot.y * destinationRect.height()
+                val radius = spot.radius * minDimension
+                canvas.drawCircle(cx, cy, radius, healingFillPaint)
+                canvas.drawCircle(cx, cy, radius, healingPaint)
+            }
+        }
+
+        if (brushCursorVisible && brushCursorRadius > 0f) {
+            canvas.drawCircle(
+                brushCursorX, brushCursorY, brushCursorRadius, brushCursorShadowPaint
+            )
+            canvas.drawCircle(brushCursorX, brushCursorY, brushCursorRadius, brushCursorPaint)
         }
     }
 }

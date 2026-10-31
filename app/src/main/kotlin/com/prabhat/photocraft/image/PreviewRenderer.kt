@@ -42,6 +42,7 @@ class PreviewRenderer : Closeable {
     private val requests = RequestSequence()
     private val closed = AtomicBoolean(false)
     private var pixelBuffer: IntArray? = null
+    private var editedBuffer: IntArray? = null
 
     fun request(
         source: Bitmap,
@@ -123,7 +124,10 @@ class PreviewRenderer : Closeable {
                     continue
                 }
 
-                val edited = pixels.copyOf()
+                val edited = editedBuffer
+                    ?.takeIf { it.size == size }
+                    ?: IntArray(size).also { editedBuffer = it }
+                System.arraycopy(pixels, 0, edited, 0, size)
                 AdjustmentMath.applyInPlace(edited, local.adjustments)
                 FilterMath.applyInPlace(edited, local.filter)
                 PhotoEffectsMath.applyInPlace(edited, width, height, local.effects)
@@ -132,12 +136,10 @@ class PreviewRenderer : Closeable {
                 HealingMath.applyInPlace(edited, width, height, local.healing)
 
                 for (y in 0 until height) {
-                    val maskY = (y.toFloat() * selection.height / height)
-                        .toInt().coerceIn(0, selection.height - 1)
+                    val maskY = (y + 0.5f) * selection.height / height
                     for (x in 0 until width) {
-                        val maskX = (x.toFloat() * selection.width / width)
-                            .toInt().coerceIn(0, selection.width - 1)
-                        var coverage = selection.coverageAt(maskX, maskY)
+                        val maskX = (x + 0.5f) * selection.width / width
+                        var coverage = selection.coverageAtBilinear(maskX, maskY)
                         if (layer.inverted) coverage = 255 - coverage
                         if (coverage == 0) continue
 
@@ -190,5 +192,6 @@ class PreviewRenderer : Closeable {
         renderHandler.removeCallbacksAndMessages(null)
         renderThread.quitSafely()
         pixelBuffer = null
+        editedBuffer = null
     }
 }

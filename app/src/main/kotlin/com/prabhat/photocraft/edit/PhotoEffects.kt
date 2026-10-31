@@ -45,7 +45,11 @@ object PhotoEffectsMath {
         offsetX: Int = 0,
         offsetY: Int = 0,
         fullWidth: Int = width,
-        fullHeight: Int = height
+        fullHeight: Int = height,
+        sourceOriginX: Float = 0f,
+        sourceOriginY: Float = 0f,
+        sourceScaleX: Float = 1f,
+        sourceScaleY: Float = 1f
     ) {
         require(width > 0 && height > 0 && pixels.size >= width * height) {
             "Pixel buffer must be at least width * height."
@@ -73,11 +77,16 @@ object PhotoEffectsMath {
         if (effects.vignette != 0) {
             applyVignette(
                 pixels, width, height, effects.vignette,
-                offsetX, offsetY, fullWidth, fullHeight
+                offsetX, offsetY, fullWidth, fullHeight,
+                sourceOriginX, sourceOriginY, sourceScaleX, sourceScaleY
             )
         }
         if (effects.grain > 0) {
-            applyGrain(pixels, width, height, effects.grain, offsetX, offsetY)
+            applyGrain(
+                pixels, width, height, effects.grain,
+                offsetX, offsetY, sourceOriginX, sourceOriginY,
+                sourceScaleX, sourceScaleY
+            )
         }
     }
 
@@ -116,7 +125,11 @@ object PhotoEffectsMath {
         h: Int,
         amount: Int,
         offsetX: Int = 0,
-        offsetY: Int = 0
+        offsetY: Int = 0,
+        sourceOriginX: Float = 0f,
+        sourceOriginY: Float = 0f,
+        sourceScaleX: Float = 1f,
+        sourceScaleY: Float = 1f
     ) {
         val strength = (amount / 100f).coerceIn(0f, 1f)
         if (strength == 0f) return
@@ -133,7 +146,11 @@ object PhotoEffectsMath {
                 val luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b
                 val midtone = (1f - abs(luminance - 0.5f) * 1.4f)
                     .coerceIn(0.25f, 1f)
-                val noise = hashNoise(offsetX + x, offsetY + y) *
+                val sourceX = (sourceOriginX + (offsetX + x) * sourceScaleX)
+                    .toInt()
+                val sourceY = (sourceOriginY + (offsetY + y) * sourceScaleY)
+                    .toInt()
+                val noise = hashNoise(sourceX, sourceY) *
                     0.16f * strength * midtone
                 p[i] = (alpha shl 24) or
                     (clamp((r + noise) * 255f) shl 16) or
@@ -274,7 +291,11 @@ object PhotoEffectsMath {
         offsetX: Int = 0,
         offsetY: Int = 0,
         fullWidth: Int = w,
-        fullHeight: Int = h
+        fullHeight: Int = h,
+        sourceOriginX: Float = 0f,
+        sourceOriginY: Float = 0f,
+        sourceScaleX: Float = 1f,
+        sourceScaleY: Float = 1f
     ) {
         val strength = amount / 100f * 0.72f
         val cx = (fullWidth - 1) / 2f
@@ -284,8 +305,8 @@ object PhotoEffectsMath {
             val i = y * w + x
             val c = p[i]
             if ((c ushr 24) == 0) continue
-            val gx = (offsetX + x).toFloat()
-            val gy = (offsetY + y).toFloat()
+            val gx = sourceOriginX + (offsetX + x) * sourceScaleX
+            val gy = sourceOriginY + (offsetY + y) * sourceScaleY
             val d = sqrt((gx - cx) * (gx - cx) + (gy - cy) * (gy - cy)) / maxDist
             val edge = (d * d).coerceIn(0f, 1f)
             val factor = (1f - strength * edge).coerceIn(0.15f, 1.85f)

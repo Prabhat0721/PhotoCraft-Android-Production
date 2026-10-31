@@ -21,6 +21,7 @@ import com.prabhat.photocraft.edit.FilterMath
 import com.prabhat.photocraft.edit.FilterSettings
 import com.prabhat.photocraft.edit.HealingMath
 import com.prabhat.photocraft.edit.HealingSettings
+import com.prabhat.photocraft.edit.HealingSpot
 import com.prabhat.photocraft.edit.PhotoEffects
 import com.prabhat.photocraft.edit.PhotoEffectsMath
 import com.prabhat.photocraft.edit.CropSelection
@@ -175,6 +176,8 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
             if (decoded.width <= 0 || decoded.height <= 0) {
                 return Result.Failure(FailureReason.UNSUPPORTED_OR_CORRUPT)
             }
+            val decodedWidth = decoded.width
+            val decodedHeight = decoded.height
 
             val output = decodePlan?.output ?: ExportPlanner.plan(
                 sourceWidth = decoded.width,
@@ -231,6 +234,9 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
                     effects = request.effects,
                     colorGrading = request.colorGrading,
                     curves = request.curves,
+                    sourceWidth = decodedWidth,
+                    sourceHeight = decodedHeight,
+                    crop = crop,
                     requestId = requestId,
                     onProgress = onProgress
                 )
@@ -240,13 +246,29 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
             }
 
             if (!request.healing.isNeutral()) {
-                val pixels = IntArray(bitmap.width * bitmap.height)
-                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-                HealingMath.applyInPlace(pixels, bitmap.width, bitmap.height, request.healing)
-                bitmap.setPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                val mappedHealing = mapHealingToCrop(
+                    request.healing, request.crop,
+                    decodedWidth, decodedHeight
+                )
+                if (!mappedHealing.isNeutral()) {
+                    val pixels = IntArray(bitmap.width * bitmap.height)
+                    bitmap.getPixels(
+                        pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height
+                    )
+                    HealingMath.applyInPlace(
+                        pixels, bitmap.width, bitmap.height, mappedHealing
+                    )
+                    bitmap.setPixels(
+                        pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height
+                    )
+                }
             }
 
-            if (!applyLocalMaskAdjustments(bitmap, request.masking, request.crop)) {
+            if (!applyLocalMaskAdjustments(
+                    bitmap, request.masking, request.crop,
+                    decodedWidth, decodedHeight
+                )
+            ) {
                 return Result.Failure(FailureReason.CANCELLED)
             }
 
@@ -307,37 +329,64 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         effects: PhotoEffects,
         colorGrading: ColorGradingSettings,
         curves: CurvesSettings,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        crop: PixelCrop,
         requestId: Int,
         onProgress: (Stage, Int) -> Unit
     ): Boolean {
         val tiles = ExportTiling.plan(bitmap.width, bitmap.height)
         var buffer = IntArray(0)
+        var inner = IntArray(0)
+        val halo = 3
+        val sourceScaleX = crop.width.toFloat() / bitmap.width
+        val sourceScaleY = crop.height.toFloat() / bitmap.height
         for ((index, tile) in tiles.withIndex()) {
             if (isCancelled()) {
                 return false
             }
-            if (buffer.size < tile.pixelCount) {
-                buffer = IntArray(tile.pixelCount)
+            val left = (tile.left - halo).coerceAtLeast(0)
+            val top = (tile.top - halo).coerceAtLeast(0)
+            val right = (tile.left + tile.width + halo).coerceAtMost(bitmap.width)
+            val bottom = (tile.top + tile.height + halo).coerceAtMost(bitmap.height)
+            val expandedWidth = right - left
+            val expandedHeight = bottom - top
+            val expandedCount = expandedWidth * expandedHeight
+            if (buffer.size < expandedCount) {
+                buffer = IntArray(expandedCount)
             }
             bitmap.getPixels(
                 buffer,
                 0,
-                tile.width,
-                tile.left,
-                tile.top,
-                tile.width,
-                tile.height
+                expandedWidth,
+                left,
+                top,
+                expandedWidth,
+                expandedHeight
             )
-            AdjustmentMath.applyInPlace(buffer, adjustments, tile.pixelCount)
-            FilterMath.applyInPlace(buffer, filter, tile.pixelCount)
+            AdjustmentMath.applyInPlace(buffer, adjustments, expandedCount)
+            FilterMath.applyInPlace(buffer, filter, expandedCount)
             PhotoEffectsMath.applyInPlace(
-                buffer, tile.width, tile.height, effects,
-                tile.left, tile.top, bitmap.width, bitmap.height
+                buffer, expandedWidth, expandedHeight, effects,
+                left, top, sourceWidth, sourceHeight,
+                crop.left.toFloat(), crop.top.toFloat(),
+                sourceScaleX, sourceScaleY
             )
-            ColorGradingMath.applyInPlace(buffer, colorGrading, tile.pixelCount)
-            CurvesMath.applyInPlace(buffer, curves, tile.pixelCount)
+            ColorGradingMath.applyInPlace(buffer, colorGrading, expandedCount)
+            CurvesMath.applyInPlace(buffer, curves, expandedCount)
+
+            if (inner.size < tile.pixelCount) {
+                inner = IntArray(tile.pixelCount)
+            }
+            for (row in 0 until tile.height) {
+                val sourceOffset =
+                    (tile.top - top + row) * expandedWidth + (tile.left - left)
+                System.arraycopy(
+                    buffer, sourceOffset, inner, row * tile.width, tile.width
+                )
+            }
             bitmap.setPixels(
-                buffer,
+                inner,
                 0,
                 tile.width,
                 tile.left,
@@ -354,63 +403,106 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
     private fun applyLocalMaskAdjustments(
         bitmap: Bitmap,
         masking: MaskingState,
-        crop: CropSelection
+        crop: CropSelection,
+        sourceWidth: Int,
+        sourceHeight: Int
     ): Boolean {
         val layers = masking.layers
             .filter { it.enabled && it.selection != null && !it.adjustments.isNeutral() }
+        if (layers.isEmpty()) return true
+
+        val tiles = ExportTiling.plan(bitmap.width, bitmap.height)
+        val halo = 3
+        val pixelCrop = ExportPlanner.pixelCrop(
+            sourceWidth = sourceWidth,
+            sourceHeight = sourceHeight,
+            crop = crop
+        )
+        val sourceScaleX = pixelCrop.width.toFloat() / bitmap.width
+        val sourceScaleY = pixelCrop.height.toFloat() / bitmap.height
+        var pixels = IntArray(0)
+        var adjusted = IntArray(0)
+        var inner = IntArray(0)
 
         for (layer in layers) {
             if (isCancelled()) return false
             val selection = layer.selection ?: continue
-            val tiles = ExportTiling.plan(bitmap.width, bitmap.height)
 
             for (tile in tiles) {
                 if (isCancelled()) return false
 
-                val pixels = IntArray(tile.pixelCount)
+                val left = (tile.left - halo).coerceAtLeast(0)
+                val top = (tile.top - halo).coerceAtLeast(0)
+                val right = (tile.left + tile.width + halo).coerceAtMost(bitmap.width)
+                val bottom = (tile.top + tile.height + halo).coerceAtMost(bitmap.height)
+                val expandedWidth = right - left
+                val expandedHeight = bottom - top
+                val expandedCount = expandedWidth * expandedHeight
+
+                if (pixels.size < expandedCount) {
+                    pixels = IntArray(expandedCount)
+                }
                 bitmap.getPixels(
-                    pixels, 0, tile.width,
-                    tile.left, tile.top, tile.width, tile.height
+                    pixels, 0, expandedWidth,
+                    left, top, expandedWidth, expandedHeight
                 )
 
-                val adjusted = pixels.copyOf()
+                if (adjusted.size < expandedCount) {
+                    adjusted = IntArray(expandedCount)
+                }
+                System.arraycopy(pixels, 0, adjusted, 0, expandedCount)
                 AdjustmentMath.applyInPlace(
-                    adjusted, layer.adjustments.adjustments, tile.pixelCount
+                    adjusted, layer.adjustments.adjustments, expandedCount
                 )
-                FilterMath.applyInPlace(adjusted, layer.adjustments.filter, tile.pixelCount)
+                FilterMath.applyInPlace(
+                    adjusted, layer.adjustments.filter, expandedCount
+                )
                 PhotoEffectsMath.applyInPlace(
-                    adjusted, tile.width, tile.height, layer.adjustments.effects,
-                    tile.left, tile.top, bitmap.width, bitmap.height
+                    adjusted, expandedWidth, expandedHeight, layer.adjustments.effects,
+                    left, top, sourceWidth, sourceHeight,
+                    pixelCrop.left.toFloat(), pixelCrop.top.toFloat(),
+                    sourceScaleX, sourceScaleY
                 )
                 ColorGradingMath.applyInPlace(
-                    adjusted, layer.adjustments.colorGrading, tile.pixelCount
+                    adjusted, layer.adjustments.colorGrading, expandedCount
                 )
-                CurvesMath.applyInPlace(adjusted, layer.adjustments.curves, tile.pixelCount)
-                HealingMath.applyInPlace(
-                    adjusted, tile.width, tile.height, layer.adjustments.healing
+                CurvesMath.applyInPlace(
+                    adjusted, layer.adjustments.curves, expandedCount
                 )
+                if (!layer.adjustments.healing.isNeutral()) {
+                    val tileHealing = mapHealingToTile(
+                        layer.adjustments.healing, crop,
+                        sourceWidth, sourceHeight,
+                        bitmap.width, bitmap.height,
+                        left, top, expandedWidth, expandedHeight
+                    )
+                    if (!tileHealing.isNeutral()) {
+                        HealingMath.applyInPlace(
+                            adjusted, expandedWidth, expandedHeight, tileHealing
+                        )
+                    }
+                }
 
                 for (localY in 0 until tile.height) {
                     val outputY = tile.top + localY
-                    val sourceY = crop.top +
-                        ((outputY + 0.5f) / bitmap.height) * crop.height
-                    val maskY = (sourceY * selection.height)
-                        .toInt().coerceIn(0, selection.height - 1)
+                    val sourceY = pixelCrop.top +
+                        ((outputY + 0.5f) / bitmap.height) * pixelCrop.height
+                    val maskY = sourceY * selection.height
 
                     for (localX in 0 until tile.width) {
                         val outputX = tile.left + localX
-                        val sourceX = crop.left +
-                            ((outputX + 0.5f) / bitmap.width) * crop.width
-                        val maskX = (sourceX * selection.width)
-                            .toInt().coerceIn(0, selection.width - 1)
+                        val sourceX = pixelCrop.left +
+                            ((outputX + 0.5f) / bitmap.width) * pixelCrop.width
+                        val maskX = sourceX * selection.width
 
-                        var coverage = selection.coverageAt(maskX, maskY)
+                        var coverage = selection.coverageAtBilinear(maskX, maskY)
                         if (layer.inverted) coverage = 255 - coverage
                         if (coverage == 0) continue
 
-                        val i = localY * tile.width + localX
-                        val base = pixels[i]
-                        val edited = adjusted[i]
+                        val bufferIndex = (outputY - top) * expandedWidth +
+                            (outputX - left)
+                        val base = pixels[bufferIndex]
+                        val edited = adjusted[bufferIndex]
                         val amount = coverage / 255f
 
                         fun blend(shift: Int): Int {
@@ -420,20 +512,96 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
                                 .toInt().coerceIn(0, 255)
                         }
 
-                        pixels[i] = (base and -0x1000000) or
+                        pixels[bufferIndex] = (base and -0x1000000) or
                             (blend(16) shl 16) or
                             (blend(8) shl 8) or
                             blend(0)
                     }
                 }
 
+                if (inner.size < tile.pixelCount) {
+                    inner = IntArray(tile.pixelCount)
+                }
+                for (row in 0 until tile.height) {
+                    val sourceOffset =
+                        (tile.top - top + row) * expandedWidth + (tile.left - left)
+                    System.arraycopy(
+                        pixels, sourceOffset, inner, row * tile.width, tile.width
+                    )
+                }
                 bitmap.setPixels(
-                    pixels, 0, tile.width,
+                    inner, 0, tile.width,
                     tile.left, tile.top, tile.width, tile.height
                 )
             }
         }
         return true
+    }
+
+    private fun mapHealingToCrop(
+        healing: HealingSettings,
+        crop: CropSelection,
+        sourceWidth: Int,
+        sourceHeight: Int
+    ): HealingSettings {
+        val cropWidth = crop.width
+        val cropHeight = crop.height
+        if (cropWidth <= 0f || cropHeight <= 0f) return HealingSettings.NEUTRAL
+        val sourceShort = minOf(sourceWidth, sourceHeight).toFloat()
+        val cropShort = minOf(
+            cropWidth * sourceWidth,
+            cropHeight * sourceHeight
+        ).coerceAtLeast(1f)
+        val spots = healing.spots.mapNotNull { spot ->
+            val x = (spot.x - crop.left) / cropWidth
+            val y = (spot.y - crop.top) / cropHeight
+            if (x < 0f || x > 1f || y < 0f || y > 1f) {
+                null
+            } else {
+                HealingSpot(
+                    x = x,
+                    y = y,
+                    radius = spot.radius * sourceShort / cropShort
+                )
+            }
+        }
+        return if (spots.isEmpty()) HealingSettings.NEUTRAL else HealingSettings(spots)
+    }
+
+    private fun mapHealingToTile(
+        healing: HealingSettings,
+        crop: CropSelection,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        outputWidth: Int,
+        outputHeight: Int,
+        tileLeft: Int,
+        tileTop: Int,
+        tileWidth: Int,
+        tileHeight: Int
+    ): HealingSettings {
+        val cropWidth = crop.width
+        val cropHeight = crop.height
+        if (cropWidth <= 0f || cropHeight <= 0f) return HealingSettings.NEUTRAL
+        val scaleX = outputWidth / cropWidth
+        val scaleY = outputHeight / cropHeight
+        val sourceShort = minOf(sourceWidth, sourceHeight).toFloat()
+        val tileShort = minOf(tileWidth, tileHeight).toFloat().coerceAtLeast(1f)
+        val spots = healing.spots.mapNotNull { spot ->
+            val outputX = (spot.x - crop.left) * scaleX
+            val outputY = (spot.y - crop.top) * scaleY
+            val tileX = (outputX - tileLeft) / tileWidth
+            val tileY = (outputY - tileTop) / tileHeight
+            val outputRadius = spot.radius * sourceShort *
+                (outputWidth / (cropWidth * sourceWidth))
+            val tileRadius = outputRadius / tileShort
+            if (tileX < 0f || tileX > 1f || tileY < 0f || tileY > 1f) {
+                null
+            } else {
+                HealingSpot(tileX, tileY, tileRadius.coerceIn(0.005f, 0.5f))
+            }
+        }
+        return if (spots.isEmpty()) HealingSettings.NEUTRAL else HealingSettings(spots)
     }
 
     private fun writeJpeg(bitmap: Bitmap, destinationUri: Uri, quality: Int): Result {

@@ -39,7 +39,7 @@ class SelfieMaskSegmenter {
 
                     if (continuation.isActive) {
                         continuation.resume(
-                            MaskSelection(width, height, coverage)
+                            MaskSelection(width, height, coverage).smoothed(1)
                         )
                     }
                 }

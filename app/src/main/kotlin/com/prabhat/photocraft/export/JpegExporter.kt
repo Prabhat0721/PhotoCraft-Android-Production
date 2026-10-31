@@ -21,6 +21,7 @@ import com.prabhat.photocraft.edit.FilterMath
 import com.prabhat.photocraft.edit.FilterSettings
 import com.prabhat.photocraft.edit.HealingMath
 import com.prabhat.photocraft.edit.HealingSettings
+import com.prabhat.photocraft.edit.PhotoEffectsMath
 import com.prabhat.photocraft.edit.CropSelection
 import com.prabhat.photocraft.edit.MaskLayer
 import com.prabhat.photocraft.edit.MaskingState
@@ -347,9 +348,8 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         masking: MaskingState,
         crop: CropSelection
     ): Boolean {
-        val layers = listOf(masking.subject, masking.background)
-            .filter { it.enabled && it.selection != null &&
-                !it.adjustments.adjustments.isNeutral() }
+        val layers = masking.layers
+            .filter { it.enabled && it.selection != null && !it.adjustments.isNeutral() }
 
         for (layer in layers) {
             if (isCancelled()) return false
@@ -368,6 +368,17 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
                 val adjusted = pixels.copyOf()
                 AdjustmentMath.applyInPlace(
                     adjusted, layer.adjustments.adjustments, tile.pixelCount
+                )
+                FilterMath.applyInPlace(adjusted, layer.adjustments.filter, tile.pixelCount)
+                PhotoEffectsMath.applyInPlace(
+                    adjusted, tile.width, tile.height, layer.adjustments.effects
+                )
+                ColorGradingMath.applyInPlace(
+                    adjusted, layer.adjustments.colorGrading, tile.pixelCount
+                )
+                CurvesMath.applyInPlace(adjusted, layer.adjustments.curves, tile.pixelCount)
+                HealingMath.applyInPlace(
+                    adjusted, tile.width, tile.height, layer.adjustments.healing
                 )
 
                 for (localY in 0 until tile.height) {

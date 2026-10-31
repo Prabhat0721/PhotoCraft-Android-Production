@@ -10,10 +10,11 @@ data class PhotoEffects(
     val texture: Int = 0,
     val details: Int = 0,
     val noiseReduction: Int = 0,
-    val vignette: Int = 0
+    val vignette: Int = 0,
+    val dehaze: Int = 0
 ) {
     init {
-        require(listOf(sharpness, texture, details, noiseReduction, vignette)
+        require(listOf(sharpness, texture, details, noiseReduction, vignette, dehaze)
             .all { it in -100..100 }) {
             "Effect values must be between -100 and 100."
         }
@@ -21,7 +22,7 @@ data class PhotoEffects(
 
     fun isNeutral(): Boolean =
         sharpness == 0 && texture == 0 && details == 0 &&
-            noiseReduction == 0 && vignette == 0
+            noiseReduction == 0 && vignette == 0 && dehaze == 0
 
     companion object {
         val NEUTRAL = PhotoEffects()
@@ -52,8 +53,65 @@ object PhotoEffectsMath {
         if (effects.details != 0) {
             localContrast(pixels, width, height, effects.details, 1, 0.45f)
         }
+        if (effects.dehaze != 0) {
+            applyDehaze(pixels, width, height, effects.dehaze)
+        }
         if (effects.vignette != 0) {
             applyVignette(pixels, width, height, effects.vignette)
+        }
+    }
+
+    private fun applyDehaze(p: IntArray, w: Int, h: Int, amount: Int) {
+        val strength = (amount / 100f).coerceIn(-1f, 1f)
+        val src = p.copyOf()
+        val dark = IntArray(src.size)
+        val radius = 2
+
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var minimum = 255
+                for (dy in -radius..radius) {
+                    val yy = (y + dy).coerceIn(0, h - 1)
+                    for (dx in -radius..radius) {
+                        val xx = (x + dx).coerceIn(0, w - 1)
+                        val c = src[yy * w + xx]
+                        if ((c ushr 24) == 0) continue
+                        val channelMin = min(
+                            ((c shr 16) and 255),
+                            min(((c shr 8) and 255), (c and 255))
+                        )
+                        if (channelMin < minimum) minimum = channelMin
+                    }
+                }
+                dark[y * w + x] = minimum
+            }
+        }
+
+        val airlight = 0.82f
+        val omega = 0.85f
+        for (i in src.indices) {
+            val c = src[i]
+            val alpha = c ushr 24
+            if (alpha == 0) continue
+            val darkNormalized = dark[i] / 255f
+            val transmission = (1f - omega * darkNormalized / airlight)
+                .coerceIn(0.28f, 1f)
+            val r = ((c shr 16) and 255) / 255f
+            val g = ((c shr 8) and 255) / 255f
+            val b = (c and 255) / 255f
+
+            val dehazedR = ((r - airlight) / transmission + airlight)
+            val dehazedG = ((g - airlight) / transmission + airlight)
+            val dehazedB = ((b - airlight) / transmission + airlight)
+
+            val mixedR = r + (dehazedR - r) * strength
+            val mixedG = g + (dehazedG - g) * strength
+            val mixedB = b + (dehazedB - b) * strength
+
+            p[i] = (alpha shl 24) or
+                (clamp(mixedR * 255f) shl 16) or
+                (clamp(mixedG * 255f) shl 8) or
+                clamp(mixedB * 255f)
         }
     }
 

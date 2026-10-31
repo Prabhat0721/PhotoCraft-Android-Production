@@ -409,8 +409,8 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="12dp"
-                                android:text="Local Subject and Background editing will be configured here. Selection and brush tools are not active yet." />
-                        
+                                android:text="Choose a mask, then adjust only the selected area. Subject and Background use automatic detection; gradients, color range and luminance range are drawn on the preview." />
+
                             <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
@@ -459,6 +459,46 @@
                                     android:text="Invert" />
                             </LinearLayout>
 
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <Button
+                                    android:id="@+id/maskLinearButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Linear" />
+
+                                <Button
+                                    android:id="@+id/maskRadialButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Radial" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <Button
+                                    android:id="@+id/maskColorRangeButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Color Range" />
+
+                                <Button
+                                    android:id="@+id/maskLuminanceButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Luminance" />
+                            </LinearLayout>
+
                             <TextView
                                 android:id="@+id/maskStatusText"
                                 style="@style/PhotoCraftFieldLabel"
@@ -472,23 +512,10 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="12dp"
-                                android:text="SUBJECT ADJUSTMENTS" />
+                                android:text="MASK ADJUSTMENTS" />
 
                             <LinearLayout
-                                android:id="@+id/maskSubjectAdjustments"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:orientation="vertical" />
-
-                            <TextView
-                                style="@style/PhotoCraftSectionLabel"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="16dp"
-                                android:text="BACKGROUND ADJUSTMENTS" />
-
-                            <LinearLayout
-                                android:id="@+id/maskBackgroundAdjustments"
+                                android:id="@+id/maskAdjustments"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:orientation="vertical" />

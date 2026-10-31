@@ -114,13 +114,12 @@ class PreviewRenderer : Closeable {
             HealingMath.applyInPlace(pixels, width, height, healing)
 
             // Apply each enabled local mask and blend by its coverage.
-            for (layer in listOf(masking.subject, masking.background)) {
+            for (layer in masking.layers) {
                 if (!layer.enabled) continue
                 val selection = layer.selection ?: continue
                 val local = layer.adjustments
 
-                if (local.adjustments.isNeutral() && local.filter.isNeutral() &&
-                    local.effects.isNeutral() && local.colorGrading.isNeutral() && local.curves.isNeutral() && local.healing.isNeutral()) {
+                if (local.isNeutral()) {
                     continue
                 }
 

@@ -323,7 +323,11 @@
                             android:id="@+id/lightPanel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="vertical">
+                            android:layout_marginBottom="10dp"
+                            android:background="@drawable/bg_panel"
+                            android:elevation="1dp"
+                            android:orientation="vertical"
+                            android:padding="16dp">
 
                             <TextView
                                 style="@style/PhotoCraftSectionLabel"
@@ -344,7 +348,11 @@
                             android:id="@+id/colorPanel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginBottom="10dp"
+                            android:background="@drawable/bg_panel"
+                            android:elevation="1dp"
                             android:orientation="vertical"
+                            android:padding="16dp"
                             android:visibility="gone">
 
                             <TextView
@@ -394,7 +402,11 @@
                             android:id="@+id/maskingPanel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginBottom="10dp"
+                            android:background="@drawable/bg_panel"
+                            android:elevation="1dp"
                             android:orientation="vertical"
+                            android:padding="16dp"
                             android:visibility="gone">
 
                             <TextView
@@ -525,7 +537,11 @@
                             android:id="@+id/filterPanel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginBottom="10dp"
+                            android:background="@drawable/bg_panel"
+                            android:elevation="1dp"
                             android:orientation="vertical"
+                            android:padding="16dp"
                             android:visibility="gone">
 
                             <TextView
@@ -596,7 +612,11 @@
                             android:id="@+id/cropPanel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginBottom="10dp"
+                            android:background="@drawable/bg_panel"
+                            android:elevation="1dp"
                             android:orientation="vertical"
+                            android:padding="16dp"
                             android:visibility="gone">
 
                             <TextView

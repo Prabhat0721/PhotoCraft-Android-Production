@@ -40,6 +40,7 @@ import com.prabhat.photocraft.edit.Adjustments
 import com.prabhat.photocraft.edit.CropGeometry
 import com.prabhat.photocraft.edit.CropRatio
 import com.prabhat.photocraft.edit.EditState
+import com.prabhat.photocraft.edit.EditStateBundleCodec
 import com.prabhat.photocraft.edit.EditStateCodec
 import com.prabhat.photocraft.edit.EditingState
 import com.prabhat.photocraft.edit.Filter
@@ -3222,6 +3223,31 @@ class MainActivity : Activity() {
             return
         }
 
+        val fullState = EditStateBundleCodec.decode(
+            savedState.getBundle(STATE_FULL_EDIT_STATE)
+        )
+        if (fullState != null) {
+            val undo = M5StateCodec.decodeStack(savedState.getIntArray(STATE_M5_UNDO))
+            val redo = M5StateCodec.decodeStack(savedState.getIntArray(STATE_M5_REDO))
+            val undoLabels = savedState.getStringArray(STATE_M5_UNDO_LABELS)
+                ?.toList()
+                .orEmpty()
+            val redoLabels = savedState.getStringArray(STATE_M5_REDO_LABELS)
+                ?.toList()
+                .orEmpty()
+            editingState = EditingState.restored(
+                EditingState.Snapshot(
+                    state = fullState,
+                    undo = undo,
+                    redo = redo,
+                    undoLabels = undoLabels,
+                    redoLabels = redoLabels,
+                    currentLabel = savedState.getString(STATE_M5_CURRENT_LABEL).orEmpty()
+                )
+            )
+            return
+        }
+
         val restoredM5 = M5StateCodec.decode(savedState.getIntArray(STATE_M5_EDIT_STATE))
         if (restoredM5 != null) {
             val undo = M5StateCodec.decodeStack(savedState.getIntArray(STATE_M5_UNDO))
@@ -3361,6 +3387,10 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         val snapshot = editingState.snapshot()
+        outState.putBundle(
+            STATE_FULL_EDIT_STATE,
+            EditStateBundleCodec.encode(snapshot.state)
+        )
         outState.putIntArray(STATE_M5_EDIT_STATE, M5StateCodec.encode(snapshot.state))
         outState.putIntArray(STATE_M5_UNDO, M5StateCodec.encodeStack(snapshot.undo))
         outState.putIntArray(STATE_M5_REDO, M5StateCodec.encodeStack(snapshot.redo))
@@ -3515,6 +3545,7 @@ class MainActivity : Activity() {
         const val STATE_M5_UNDO_LABELS = "m5_undo_labels"
         const val STATE_M5_REDO_LABELS = "m5_redo_labels"
         const val STATE_M5_CURRENT_LABEL = "m5_current_label"
+        const val STATE_FULL_EDIT_STATE = "m5_full_edit_state"
         const val STATE_EDIT_STATE = "m4_edit_state"
         const val STATE_UNDO = "m4_undo"
         const val STATE_REDO = "m4_redo"

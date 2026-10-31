@@ -169,6 +169,7 @@ class MainActivity : Activity() {
     private var healingToolActive = false
     private var healingRadius = 0.05f
     private var healingToggleButton: Button? = null
+    private var refreshMaskOverlay: (() -> Unit)? = null
     private lateinit var errorPanel: View
     private lateinit var errorText: TextView
     private lateinit var errorRetryButton: Button
@@ -1697,6 +1698,7 @@ class MainActivity : Activity() {
                 } else null
             )
         }
+        refreshMaskOverlay = { refreshMaskStatus() }
 
         fun selectMask(type: com.prabhat.photocraft.edit.MaskType) {
             editingState.updateMasking(
@@ -2237,6 +2239,7 @@ class MainActivity : Activity() {
         } else {
             View.GONE
         }
+        refreshMaskOverlay?.invoke()
     }
 
     private fun afterHistoryChange(previousState: EditState) {
@@ -2246,11 +2249,11 @@ class MainActivity : Activity() {
         applyFilterControlsFromState()
         applyDisplayedBitmap()
         updateOutputSummary()
-        if (
-            editingState.adjustments != previousState.adjustments ||
-            editingState.filter != previousState.filter
-        ) {
+        if (editingState.state != previousState) {
             requestPreviewRender()
+        }
+        findViewById<LinearLayout>(R.id.maskAdjustments)?.let {
+            rebuildMaskAdjustmentControls(it)
         }
         refreshHistory()
         syncUiState()

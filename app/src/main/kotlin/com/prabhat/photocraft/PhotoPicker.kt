@@ -1,11 +1,13 @@
 package com.prabhat.photocraft
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.provider.MediaStore
 
 object PhotoPicker {
     private const val MIME_TYPE = "image/*"
 
+    @SuppressLint("InlinedApi")
     fun pickerIntent(): Intent =
         Intent(MediaStore.ACTION_PICK_IMAGES).apply {
             type = MIME_TYPE

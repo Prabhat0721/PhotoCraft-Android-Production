@@ -1,5 +1,6 @@
 package com.prabhat.photocraft.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -54,6 +55,7 @@ class CurveEditorView @JvmOverloads constructor(
         strokeWidth = 1.5f * density
         style = Paint.Style.STROKE
     }
+    private val curvePath = Path()
 
     private var activeIndex = -1
     private var lastTapIndex = -1
@@ -107,7 +109,7 @@ class CurveEditorView @JvmOverloads constructor(
         canvas.drawLine(plotLeft, plotBottom, plotRight, plotTop, diagonalPaint)
 
         val table = CurvesMath.createLookupTable(curve)
-        val path = Path()
+        curvePath.reset()
         val steps = 128
         for (i in 0..steps) {
             val x = i / steps.toFloat()
@@ -115,9 +117,9 @@ class CurveEditorView @JvmOverloads constructor(
             val y = table[lutIndex] / 255f
             val px = plotLeft + x * (plotRight - plotLeft)
             val py = plotBottom - y * (plotBottom - plotTop)
-            if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            if (i == 0) curvePath.moveTo(px, py) else curvePath.lineTo(px, py)
         }
-        canvas.drawPath(path, curvePaint)
+        canvas.drawPath(curvePath, curvePaint)
 
         for (point in curve.points) {
             val px = plotLeft + point.x.coerceIn(0f, 1f) * (plotRight - plotLeft)
@@ -127,6 +129,7 @@ class CurveEditorView @JvmOverloads constructor(
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (width <= 0 || height <= 0) return false
         val nx = ((event.x - plotLeft) / (plotRight - plotLeft)).coerceIn(0f, 1f)

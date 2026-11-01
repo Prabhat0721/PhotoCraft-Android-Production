@@ -1,5 +1,6 @@
 package com.prabhat.photocraft.image
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.HandlerThread
@@ -22,6 +23,7 @@ import com.prabhat.photocraft.util.RequestSequence
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
+@SuppressLint("UseKtx")
 class PreviewRenderer : Closeable {
     sealed class Result {
         data class Success(val bitmap: Bitmap) : Result()

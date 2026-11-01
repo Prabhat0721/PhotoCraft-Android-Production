@@ -1,7 +1,9 @@
 package com.prabhat.photocraft.preset
 
+import android.annotation.SuppressLint
 import android.content.Context
 
+@SuppressLint("ApplySharedPref", "UseKtx")
 class PresetStore(context: Context) {
     enum class SaveResult {
         SAVED,

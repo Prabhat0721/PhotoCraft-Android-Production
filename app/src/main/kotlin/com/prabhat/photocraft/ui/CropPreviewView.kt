@@ -1,5 +1,6 @@
 package com.prabhat.photocraft.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -28,6 +29,7 @@ class CropPreviewView @JvmOverloads constructor(
     private var bitmap: Bitmap? = null
     private var crop = CropSelection.FULL
     private val sourceRect = Rect()
+    private val overlaySourceRect = Rect()
     private val destinationRect = RectF()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -209,6 +211,7 @@ class CropPreviewView @JvmOverloads constructor(
         invalidate()
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (zoomEnabled) {
             scaleDetector.onTouchEvent(event)
@@ -312,8 +315,9 @@ class CropPreviewView @JvmOverloads constructor(
             val ot = floor(crop.top * overlay.height).toInt().coerceIn(0, overlay.height - 1)
             val oright = ceil(crop.right * overlay.width).toInt().coerceIn(ol + 1, overlay.width)
             val obottom = ceil(crop.bottom * overlay.height).toInt().coerceIn(ot + 1, overlay.height)
+            overlaySourceRect.set(ol, ot, oright, obottom)
             canvas.drawBitmap(
-                overlay, Rect(ol, ot, oright, obottom), destinationRect, overlayPaint
+                overlay, overlaySourceRect, destinationRect, overlayPaint
             )
         }
 

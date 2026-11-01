@@ -1,5 +1,6 @@
 package com.prabhat.photocraft.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -115,6 +116,7 @@ class CropOverlayView @JvmOverloads constructor(
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || imageWidth <= 0 || imageHeight <= 0 || !updateRects()) {
             return false

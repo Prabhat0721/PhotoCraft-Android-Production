@@ -1,5 +1,6 @@
 package com.prabhat.photocraft.export
 
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -35,6 +36,7 @@ import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+@SuppressLint("UseKtx", "Recycle")
 class JpegExporter(
     private val resolver: ContentResolver,
     private val cacheDir: File? = null

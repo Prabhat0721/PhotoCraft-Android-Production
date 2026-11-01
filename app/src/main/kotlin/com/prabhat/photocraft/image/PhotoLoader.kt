@@ -1,5 +1,6 @@
 package com.prabhat.photocraft.image
 
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
@@ -17,6 +18,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+@SuppressLint("Recycle")
 class PhotoLoader(private val resolver: ContentResolver) : Closeable {
     sealed class Result {
         data class Success(

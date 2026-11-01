@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PhotoCraft</string>
-    <string name="badge">M5.3 • PHOTO-FIRST STUDIO</string>
-    <string name="local_badge">LOCAL</string>
     <string name="empty_title">Start with a photo</string>
     <string name="empty_body">Pick one image and shape it with precise light and color controls. Everything stays on this device.</string>
     <string name="open_photo">Open Photo</string>
@@ -23,7 +21,6 @@
     <string name="reset">Reset</string>
     <string name="compare_hold_description">Press and hold to compare with the original photo</string>
     <string name="filter_title">Filter &amp; intensity</string>
-    <string name="filter_subtitle">Apply a look after light and color adjustments. Intensity blends it without changing the original file.</string>
     <string name="filter_style_label">Filter style</string>
     <string name="filter_intensity_label">Filter intensity</string>
     <string name="filter_summary">%1$s • %2$d%%</string>
@@ -62,13 +59,11 @@
     <string name="history_preset">Preset: %1$s</string>
     <string name="light_title">Light</string>
     <string name="color_title">Color</string>
-    <string name="color_subtitle">Balance warmth, tint, saturation, and vibrance. The crop stays visible while you work.</string>
     <string name="category_light">Light</string>
     <string name="category_color">Color</string>
     <string name="category_effects">Effects</string>
     <string name="category_crop">Crop</string>
     <string name="crop_title">Crop &amp; aspect</string>
-    <string name="crop_subtitle">The full photo stays visible while you crop. Drag a handle on the photo or use the controls below; export applies the crop.</string>
     <string name="crop_drag_hint">Drag a corner to resize. In Free mode, drag an edge too; drag inside the frame to move it.</string>
     <string name="crop_ratio_label">Aspect ratio</string>
     <string name="crop_ratio_free">Free</string>
@@ -82,11 +77,10 @@
     <string name="crop_horizontal_label">Horizontal position</string>
     <string name="crop_vertical_label">Vertical position</string>
     <string name="crop_summary">Crop %1$d%% × %2$d%% • %3$s</string>
-    <string name="crop_control_description">%1$s, %2$d percent</string>
-    <string name="adjustments_title">Adjustments</string>
-    <string name="adjustments_subtitle">Non-destructive preview. Export creates a new full-resolution JPEG; the original stays untouched.</string>
-    <string name="section_light">LIGHT</string>
-    <string name="section_color">COLOR</string>
+    <plurals name="crop_control_description">
+        <item quantity="one">%1$s, %2$d percent</item>
+        <item quantity="other">%1$s, %2$d percent</item>
+    </plurals>
     <string name="adjust_exposure">Exposure</string>
     <string name="adjust_brightness">Brightness</string>
     <string name="adjust_contrast">Contrast</string>
@@ -99,6 +93,34 @@
     <string name="adjust_saturation">Saturation</string>
     <string name="adjust_vibrance">Vibrance</string>
     <string name="adjustment_control_description">%1$s, %2$s</string>
+    <string name="section_hsl_mixer">HSL Color Mixer</string>
+    <string name="section_color_grading">Color Grading</string>
+    <string name="masking_title">Masking</string>
+    <string name="masking_description">Choose a mask, then adjust only the selected area. Subject and Background use automatic detection; gradients, color range and luminance range are drawn on the preview.</string>
+    <string name="mask_auto_select">AUTO SELECT</string>
+    <string name="mask_subject">Subject</string>
+    <string name="mask_background">Background</string>
+    <string name="mask_paint">PAINT</string>
+    <string name="mask_brush">Brush</string>
+    <string name="mask_eraser">Eraser</string>
+    <string name="mask_invert">Invert</string>
+    <string name="mask_gradient">GRADIENT</string>
+    <string name="mask_linear">Linear</string>
+    <string name="mask_radial">Radial</string>
+    <string name="mask_range">RANGE</string>
+    <string name="mask_color_range">Color Range</string>
+    <string name="mask_luminance">Luminance</string>
+    <string name="mask_select_hint">Select a mask to begin.</string>
+    <string name="mask_adjustments_title">MASK ADJUSTMENTS</string>
+    <string name="filter_effects_title">Effects</string>
+    <string name="mask_status">Mask: %1$s • Tool: %2$s • %3$s</string>
+    <string name="mask_status_no_selection">No selection yet</string>
+    <string name="mask_status_selection_ready">Selection ready</string>
+    <string name="open_photo_first">Open a photo first</string>
+    <string name="detecting_subject">Detecting subject…</string>
+    <string name="subject_detection_failed">Subject detection failed: %1$s</string>
+    <string name="try_again">Try again</string>
+    <string name="healing_tool_off">Healing Tool: Off</string>
     <string name="retry">Retry</string>
     <string name="retry_pick">Pick Again</string>
     <string name="error_invalid_uri">That photo location could not be opened. Choose another image.</string>
@@ -113,7 +135,6 @@
     <string name="error_current_photo_kept">Your current photo and edits are unchanged.</string>
     <string name="export_title">Export JPEG</string>
     <string name="export_sheet_subtitle">Full-resolution JPEG. The original is never modified.</string>
-    <string name="export_subtitle">Choose quality and output size. Original crop resolution is exported in full without a hidden MP cap; export creates a new JPEG and leaves the original untouched.</string>
     <string name="quality_label">JPEG quality</string>
     <string name="quality_high">High • 95</string>
     <string name="quality_standard">Standard • 85</string>
@@ -126,7 +147,6 @@
     <string name="size_long_2048">Long edge • 2048 px</string>
     <string name="size_long_1080">Long edge • 1080 px</string>
     <string name="output_summary">Output: %1$d × %2$d • %3$s</string>
-    <string name="output_summary_estimate">Output estimate: %1$d × %2$d • %3$s</string>
 
     <string name="color_space_label">Color space</string>
     <string name="color_space_srgb">sRGB</string>
@@ -159,5 +179,4 @@
     <string name="error_export_same_file">Choose a different destination. The original photo cannot be overwritten.</string>
     <string name="error_export_write">The JPEG could not be saved. Choose a destination and try again.</string>
     <string name="error_export_no_destination">No destination was returned. Try exporting again.</string>
-    <string name="footer">PhotoCraft / M5.3   •   PHOTO-FIRST STUDIO</string>
 </resources>

@@ -16,7 +16,6 @@
     <color name="text_muted">#72727A</color>
     <color name="error">#FCA5A5</color>
     <color name="error_surface">#2A1417</color>
-    <color name="warning">#FBBF24</color>
     <color name="button_text">#04231A</color>
     <color name="slider_track">#3A3A42</color>
     <color name="preview_scrim">#B3000000</color>

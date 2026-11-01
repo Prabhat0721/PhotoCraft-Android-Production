@@ -91,12 +91,28 @@
     </style>
 
     <style name="PhotoCraftSeekBar" parent="@android:style/Widget.Material.SeekBar">
-        <item name="android:progressTint">@color/accent</item>
-        <item name="android:progressBackgroundTint">@color/slider_track</item>
-        <item name="android:thumbTint">@color/accent</item>
+        <item name="android:progressDrawable">@drawable/seekbar_track</item>
+        <item name="android:thumb">@drawable/seekbar_thumb</item>
         <item name="android:splitTrack">false</item>
-        <item name="android:minHeight">36dp</item>
+        <item name="android:minHeight">40dp</item>
         <item name="android:paddingStart">2dp</item>
         <item name="android:paddingEnd">2dp</item>
+    </style>
+
+    <style name="PhotoCraftToolButton" parent="@android:style/Widget.Material.Button">
+        <item name="android:background">@drawable/bg_tool_chip</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="android:textColor">@color/tool_chip_text</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:stateListAnimator">@null</item>
     </style>
 </resources>

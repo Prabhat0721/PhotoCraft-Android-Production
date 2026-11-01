@@ -29,11 +29,16 @@ import com.prabhat.photocraft.edit.MaskLayer
 import com.prabhat.photocraft.edit.MaskingState
 import com.prabhat.photocraft.util.RequestSequence
 import java.io.Closeable
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-class JpegExporter(private val resolver: ContentResolver) : Closeable {
+class JpegExporter(
+    private val resolver: ContentResolver,
+    private val cacheDir: File? = null
+) : Closeable {
     sealed class Result {
         data class Success(val width: Int, val height: Int) : Result()
         data class Failure(val reason: FailureReason) : Result()
@@ -272,12 +277,24 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
                 return Result.Failure(FailureReason.CANCELLED)
             }
 
+            if (request.colorSpace == ExportColorSpace.ADOBE_RGB) {
+                if (!applyColorSpaceInTiles(bitmap, requestId, onProgress)) {
+                    return Result.Failure(FailureReason.CANCELLED)
+                }
+            }
+
             if (isCancelled()) {
                 return Result.Failure(FailureReason.CANCELLED)
             }
 
             reportProgress(requestId, Stage.WRITING, 95, onProgress)
-            val result = writeJpeg(bitmap, destinationUri, request.quality.jpegQuality)
+            val result = writeJpeg(
+                bitmap = bitmap,
+                destinationUri = destinationUri,
+                quality = request.quality.jpegQuality,
+                editSessionPayload = request.editSessionPayload,
+                iccProfile = request.iccProfile
+            )
             if (result is Result.Success) {
                 succeeded = true
             }
@@ -408,7 +425,10 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         sourceHeight: Int
     ): Boolean {
         val layers = masking.layers
-            .filter { it.enabled && it.selection != null && !it.adjustments.isNeutral() }
+            .filter {
+                it.type == masking.selectedMask &&
+                    it.enabled && it.selection != null && !it.adjustments.isNeutral()
+            }
         if (layers.isEmpty()) return true
 
         val tiles = ExportTiling.plan(bitmap.width, bitmap.height)
@@ -538,6 +558,37 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         return true
     }
 
+    private fun applyColorSpaceInTiles(
+        bitmap: Bitmap,
+        requestId: Int,
+        onProgress: (Stage, Int) -> Unit
+    ): Boolean {
+        val tiles = ExportTiling.plan(bitmap.width, bitmap.height)
+        var buffer = IntArray(0)
+        for ((index, tile) in tiles.withIndex()) {
+            if (isCancelled()) return false
+            if (buffer.size < tile.pixelCount) {
+                buffer = IntArray(tile.pixelCount)
+            }
+            bitmap.getPixels(
+                buffer, 0, tile.width,
+                tile.left, tile.top, tile.width, tile.height
+            )
+            ColorSpaceConverter.srgbToAdobeRgbInPlace(buffer, tile.pixelCount)
+            bitmap.setPixels(
+                buffer, 0, tile.width,
+                tile.left, tile.top, tile.width, tile.height
+            )
+            reportProgress(
+                requestId,
+                Stage.PROCESSING,
+                90 + ((index + 1) * 5 / tiles.size),
+                onProgress
+            )
+        }
+        return true
+    }
+
     private fun mapHealingToCrop(
         healing: HealingSettings,
         crop: CropSelection,
@@ -604,11 +655,90 @@ class JpegExporter(private val resolver: ContentResolver) : Closeable {
         return if (spots.isEmpty()) HealingSettings.NEUTRAL else HealingSettings(spots)
     }
 
-    private fun writeJpeg(bitmap: Bitmap, destinationUri: Uri, quality: Int): Result {
+    private fun writeJpeg(
+        bitmap: Bitmap,
+        destinationUri: Uri,
+        quality: Int,
+        editSessionPayload: String?,
+        iccProfile: ByteArray?
+    ): Result {
         return try {
             if (isCancelled()) {
                 return Result.Failure(FailureReason.CANCELLED)
             }
+            val needsMetadata = !editSessionPayload.isNullOrBlank() ||
+                (iccProfile != null && iccProfile.isNotEmpty())
+            if (!needsMetadata || cacheDir == null) {
+                return writeDirectJpeg(bitmap, destinationUri, quality)
+            }
+
+            val temp = File.createTempFile("photocraft-export", ".jpg", cacheDir)
+            try {
+                val compressed = FileOutputStream(temp).use { stream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+                }
+                if (!compressed) {
+                    return Result.Failure(FailureReason.WRITE_FAILED)
+                }
+                if (isCancelled()) {
+                    return Result.Failure(FailureReason.CANCELLED)
+                }
+                val output = resolver.openOutputStream(destinationUri, "wt")
+                    ?: return Result.Failure(FailureReason.WRITE_FAILED)
+                val outcome = output.use { stream ->
+                    ExportWriteGuard.writeIfActive({ isCancelled() }) {
+                        temp.inputStream().use { input ->
+                            JpegMetadata.write(
+                                input = input,
+                                output = stream,
+                                sessionPayload = editSessionPayload,
+                                iccProfile = iccProfile,
+                                isCancelled = { isCancelled() }
+                            )
+                        }
+                    }
+                }
+                when (outcome) {
+                    ExportWriteGuard.Outcome.CANCELLED ->
+                        return Result.Failure(FailureReason.CANCELLED)
+                    ExportWriteGuard.Outcome.WRITE_FAILED ->
+                        return Result.Failure(
+                            if (isCancelled()) {
+                                FailureReason.CANCELLED
+                            } else {
+                                FailureReason.WRITE_FAILED
+                            }
+                        )
+                    ExportWriteGuard.Outcome.SUCCESS -> Unit
+                }
+            } finally {
+                temp.delete()
+            }
+
+            if (
+                ExportWriteGuard.afterClose({ isCancelled() }) ==
+                ExportWriteGuard.Outcome.CANCELLED
+            ) {
+                return Result.Failure(FailureReason.CANCELLED)
+            }
+            Result.Success(bitmap.width, bitmap.height)
+        } catch (_: SecurityException) {
+            Result.Failure(FailureReason.WRITE_FAILED)
+        } catch (_: IOException) {
+            Result.Failure(FailureReason.WRITE_FAILED)
+        } catch (_: IllegalArgumentException) {
+            Result.Failure(FailureReason.WRITE_FAILED)
+        } catch (_: RuntimeException) {
+            Result.Failure(FailureReason.WRITE_FAILED)
+        }
+    }
+
+    private fun writeDirectJpeg(
+        bitmap: Bitmap,
+        destinationUri: Uri,
+        quality: Int
+    ): Result {
+        return try {
             val output = resolver.openOutputStream(destinationUri, "wt")
                 ?: return Result.Failure(FailureReason.WRITE_FAILED)
             output.use { stream ->

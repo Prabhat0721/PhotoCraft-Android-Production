@@ -43,6 +43,7 @@ import com.prabhat.photocraft.edit.CropRatio
 import com.prabhat.photocraft.edit.EditState
 import com.prabhat.photocraft.edit.EditStateBundleCodec
 import com.prabhat.photocraft.edit.EditStateCodec
+import com.prabhat.photocraft.edit.EditSessionCodec
 import com.prabhat.photocraft.edit.EditingState
 import com.prabhat.photocraft.edit.Filter
 import com.prabhat.photocraft.edit.FilterSettings
@@ -60,6 +61,7 @@ import com.prabhat.photocraft.edit.M5StateCodec
 import com.prabhat.photocraft.edit.MaskingState
 import com.prabhat.photocraft.export.DestinationAttestation
 import com.prabhat.photocraft.export.DestinationCreation
+import com.prabhat.photocraft.export.ExportColorSpace
 import com.prabhat.photocraft.export.ExportDecision
 import com.prabhat.photocraft.export.ExportGate
 import com.prabhat.photocraft.export.ExportNaming
@@ -126,6 +128,8 @@ class MainActivity : Activity() {
     private lateinit var cropPanel: View
     private lateinit var qualitySpinner: Spinner
     private lateinit var sizeSpinner: Spinner
+    private lateinit var colorSpaceSpinner: Spinner
+    private lateinit var includeEditHistoryCheckBox: CheckBox
     private lateinit var outputSummary: TextView
     private lateinit var filterSpinner: Spinner
     private lateinit var filterSummary: TextView
@@ -173,6 +177,7 @@ class MainActivity : Activity() {
     private var healingRadius = 0.05f
     private var healingToggleButton: Button? = null
     private var maskActiveTool = "Brush"
+    private var maskOverlayVisible = false
     private var requestSubjectDetection: (() -> Unit)? = null
     private var maskPixelBuffer: IntArray? = null
     private var maskPixelBitmap: Bitmap? = null
@@ -212,6 +217,8 @@ class MainActivity : Activity() {
     private var selectedCategory = EditorCategory.LIGHT
     private var selectedQuality = ExportQuality.HIGH
     private var selectedSize = ExportSize.ORIGINAL
+    private var selectedColorSpace = ExportColorSpace.SRGB
+    private var includeEditHistory = true
     private var sourceWidth = 0
     private var sourceHeight = 0
     private var suppressCropEvents = false
@@ -224,7 +231,7 @@ class MainActivity : Activity() {
         bindViews()
         loader = PhotoLoader(contentResolver)
         renderer = PreviewRenderer()
-        exporter = JpegExporter(contentResolver)
+        exporter = JpegExporter(contentResolver, cacheDir)
         presetStore = PresetStore(this)
         restoreEditingState(savedInstanceState)
         restoreExportOptions(savedInstanceState)
@@ -316,6 +323,8 @@ class MainActivity : Activity() {
         cropPanel = findViewById(R.id.cropPanel)
         qualitySpinner = findViewById(R.id.qualitySpinner)
         sizeSpinner = findViewById(R.id.sizeSpinner)
+        colorSpaceSpinner = findViewById(R.id.colorSpaceSpinner)
+        includeEditHistoryCheckBox = findViewById(R.id.includeEditHistoryCheckBox)
         outputSummary = findViewById(R.id.outputSummary)
         filterSpinner = findViewById(R.id.filterSpinner)
         filterSummary = findViewById(R.id.filterSummary)
@@ -480,6 +489,37 @@ class MainActivity : Activity() {
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
+        val colorSpaceAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            ExportColorSpace.entries.map { getString(colorSpaceLabel(it)) }
+        )
+        colorSpaceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        colorSpaceSpinner.adapter = colorSpaceAdapter
+        colorSpaceSpinner.setSelection(selectedColorSpace.ordinal)
+        colorSpaceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val colorSpace = ExportColorSpace.entries.getOrNull(position) ?: return
+                if (colorSpace == selectedColorSpace) return
+                selectedColorSpace = colorSpace
+                clearExportStatus()
+                syncUiState()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
+        includeEditHistoryCheckBox.isChecked = includeEditHistory
+        includeEditHistoryCheckBox.setOnCheckedChangeListener { _, checked ->
+            includeEditHistory = checked
+            clearExportStatus()
         }
 
         val ratioAdapter = ArrayAdapter(
@@ -1648,6 +1688,20 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
 
+        val overlayToggle = CheckBox(this).apply {
+            text = "Show mask overlay"
+            isChecked = maskOverlayVisible
+            contentDescription = "Show or hide the selected mask overlay"
+            setOnCheckedChangeListener { _, checked ->
+                maskOverlayVisible = checked
+                refreshMaskOverlay?.invoke()
+            }
+        }
+        container.addView(overlayToggle, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
         val optionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
@@ -1674,8 +1728,21 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
 
-        addGroupTitle("LIGHT")
-        com.prabhat.photocraft.edit.Adjustment.entries
+        val hasSelection = layer.selection != null
+        if (!hasSelection) {
+            addGroupTitle("LOCAL ADJUSTMENTS")
+            container.addView(TextView(this).apply {
+                text = "Select or create this mask to adjust only its area."
+                textSize = 13f
+                setTextColor(getColor(R.color.text_secondary))
+                setPadding(0, dp(4), 0, dp(4))
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+        } else {
+            addGroupTitle("LIGHT")
+            com.prabhat.photocraft.edit.Adjustment.entries
             .filter { it.group == com.prabhat.photocraft.edit.AdjustmentGroup.LIGHT }
             .forEach { adjustment ->
                 val title = adjustment.name.lowercase()
@@ -1735,6 +1802,7 @@ class MainActivity : Activity() {
         addSlider("Vignette", layer.adjustments.effects.vignette) { value ->
             applyLocal { it.copy(effects = it.effects.copy(vignette = value)) }
         }
+        }
     }
 
     private fun refreshHealingOverlay() {
@@ -1784,12 +1852,16 @@ class MainActivity : Activity() {
     }
 
     private fun clearSelectedMask() {
+        maskOverlayVisible = false
         val masking = editingState.state.masking
         val updated = masking.withLayer(
             masking.selected().copy(selection = null, inverted = false)
         )
         if (editingState.updateMasking(updated, "Clear Mask")) {
             refreshMaskOverlay?.invoke()
+            findViewById<LinearLayout>(R.id.maskAdjustments)?.let {
+                rebuildMaskAdjustmentControls(it)
+            }
             if (!updated.selected().adjustments.isNeutral()) {
                 requestPreviewRender()
             }
@@ -1897,7 +1969,10 @@ class MainActivity : Activity() {
                 if (layer.inverted) it.inverted() else it
             }
             preview.setMaskSelection(
-                if (selectedCategory == EditorCategory.MASKING && !compareHeld) {
+                if (maskOverlayVisible &&
+                    selectedCategory == EditorCategory.MASKING &&
+                    !compareHeld
+                ) {
                     display
                 } else null
             )
@@ -1910,6 +1985,7 @@ class MainActivity : Activity() {
         refreshMaskOverlay = { refreshMaskStatus() }
 
         fun selectMask(type: com.prabhat.photocraft.edit.MaskType) {
+            maskOverlayVisible = true
             editingState.updateMasking(
                 editingState.state.masking.selectMask(type), "Select Mask"
             )
@@ -1925,11 +2001,16 @@ class MainActivity : Activity() {
             configure: (MaskingState) -> MaskingState = { it }
         ) {
             val masking = configure(editingState.state.masking)
+            val hadSelection = masking.selected().selection != null
             val updated = masking.withLayer(
                 masking.selected().copy(selection = selection, inverted = false)
             )
+            maskOverlayVisible = true
             editingState.updateMasking(updated, label)
             refreshMaskStatus()
+            if (!hadSelection) {
+                rebuildMaskAdjustmentControls(maskAdjustments)
+            }
             if (renderPreview &&
                 !editingState.state.masking.selected().adjustments.isNeutral()
             ) {
@@ -1986,6 +2067,7 @@ class MainActivity : Activity() {
                     .withLayer(current.subject.copy(selection = subject, inverted = false))
                     .withLayer(current.background.copy(selection = background, inverted = false))
                     .selectMask(type)
+                maskOverlayVisible = true
                 editingState.updateMasking(updated, "Auto Select $type")
                 refreshMaskStatus()
                 rebuildMaskAdjustmentControls(maskAdjustments)
@@ -2027,6 +2109,7 @@ class MainActivity : Activity() {
                             )
                         )
                         .selectMask(type)
+                    maskOverlayVisible = true
                     editingState.updateMasking(latest, "Auto Select $type")
                     refreshMaskStatus()
                     rebuildMaskAdjustmentControls(maskAdjustments)
@@ -2134,21 +2217,29 @@ class MainActivity : Activity() {
             if (!canEditPhoto() || bitmap == null) {
                 false
             } else if (healingToolActive && !maskCategory) {
-                if (action == android.view.MotionEvent.ACTION_DOWN) {
-                    val nx = (x / bitmap.width).coerceIn(0f, 1f)
-                    val ny = (y / bitmap.height).coerceIn(0f, 1f)
-                    editingState.beginGesture()
-                    editingState.updateHealing(
-                        editingState.state.healing.copy(
-                            spots = editingState.state.healing.spots +
-                                HealingSpot(nx, ny, healingRadius)
-                        ),
-                        "Heal Spot"
-                    )
-                    editingState.endGesture()
-                    clearExportStatus()
-                    requestPreviewRender()
-                    syncUiState()
+                when (action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        editingState.beginGesture()
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        val nx = (x / bitmap.width).coerceIn(0f, 1f)
+                        val ny = (y / bitmap.height).coerceIn(0f, 1f)
+                        editingState.updateHealing(
+                            editingState.state.healing.copy(
+                                spots = editingState.state.healing.spots +
+                                    HealingSpot(nx, ny, healingRadius)
+                            ),
+                            "Heal Spot"
+                        )
+                        editingState.endGesture()
+                        clearExportStatus()
+                        requestPreviewRender()
+                        syncUiState()
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        editingState.cancelGesture()
+                        syncUiState()
+                    }
                 }
                 true
             } else if (!maskCategory) {
@@ -2244,9 +2335,10 @@ class MainActivity : Activity() {
                             android.view.MotionEvent.ACTION_DOWN -> {
                                 editingState.beginGesture()
                                 val masking = editingState.state.masking
-                                val cursorRadius = masking.brushSize * 0.5f *
-                                    preview.width / bitmap.width
-                                preview.setBrushCursor(x, y, cursorRadius, true)
+                                val hadSelection = masking.selected().selection != null
+                                preview.setBrushCursorAtSource(
+                                    x, y, masking.brushSize * 0.5f, bitmap.width, true
+                                )
                                 editingState.updateMasking(
                                     masking.paintSelected(
                                         bitmap.width,
@@ -2260,12 +2352,15 @@ class MainActivity : Activity() {
                                     "Paint Mask"
                                 )
                                 refreshMaskStatus()
+                                if (!hadSelection) {
+                                    rebuildMaskAdjustmentControls(maskAdjustments)
+                                }
                             }
                             android.view.MotionEvent.ACTION_MOVE -> {
                                 val masking = editingState.state.masking
-                                val cursorRadius = masking.brushSize * 0.5f *
-                                    preview.width / bitmap.width
-                                preview.setBrushCursor(x, y, cursorRadius, true)
+                                preview.setBrushCursorAtSource(
+                                    x, y, masking.brushSize * 0.5f, bitmap.width, true
+                                )
                                 editingState.updateMasking(
                                     masking.paintSelected(
                                         bitmap.width,
@@ -2542,6 +2637,7 @@ class MainActivity : Activity() {
         } else {
             View.GONE
         }
+        previewImage.setZoomEnabled(selectedCategory != EditorCategory.CROP)
         refreshMaskOverlay?.invoke()
     }
 
@@ -2885,6 +2981,23 @@ class MainActivity : Activity() {
         if (width <= 0 || height <= 0) {
             return null
         }
+        val sessionPayload = if (includeEditHistory) {
+            EditSessionCodec.encode(editingState.snapshot())
+        } else {
+            null
+        }
+        val adobeProfile = if (selectedColorSpace == ExportColorSpace.ADOBE_RGB) {
+            loadAdobeRgbProfile()
+        } else {
+            null
+        }
+        val effectiveColorSpace = if (
+            selectedColorSpace == ExportColorSpace.ADOBE_RGB && adobeProfile != null
+        ) {
+            ExportColorSpace.ADOBE_RGB
+        } else {
+            ExportColorSpace.SRGB
+        }
         return ExportRequest(
             adjustments = editingState.adjustments,
             crop = editingState.crop,
@@ -2897,8 +3010,17 @@ class MainActivity : Activity() {
             healing = editingState.state.healing,
             sourceWidth = width,
             sourceHeight = height,
-            masking = editingState.state.masking
+            masking = editingState.state.masking,
+            colorSpace = effectiveColorSpace,
+            iccProfile = adobeProfile,
+            editSessionPayload = sessionPayload
         )
+    }
+
+    private fun loadAdobeRgbProfile(): ByteArray? = try {
+        resources.openRawResource(R.raw.adobe_rgb).use { it.readBytes() }
+    } catch (_: Exception) {
+        null
     }
 
     private fun showExportSuccess(width: Int, height: Int) {
@@ -3001,6 +3123,7 @@ class MainActivity : Activity() {
         pendingResetEdits = true
 
         sourceBitmap = result.bitmap
+        previewImage.resetZoom()
         adjustedBitmap?.takeIf { it !== result.bitmap }?.recycle()
         adjustedBitmap = null
         currentDisplayName = result.displayName
@@ -3013,6 +3136,7 @@ class MainActivity : Activity() {
             maskActiveTool = "Brush"
             healingToolActive = false
             healingToggleButton?.text = "Healing Tool: Off"
+            maskOverlayVisible = false
         }
 
         cropOverlay.setImageAspect(sourceWidth, sourceHeight)
@@ -3033,7 +3157,45 @@ class MainActivity : Activity() {
 
         if (resetEdits) {
             root.smoothScrollTo(0, 0)
+            result.embeddedEditSession?.let { payload ->
+                EditSessionCodec.decode(payload)?.let { snapshot ->
+                    showRestoreEditsDialog(snapshot)
+                }
+            }
         }
+    }
+
+    private fun showRestoreEditsDialog(snapshot: EditingState.Snapshot) {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.restore_edits_title)
+            .setMessage(R.string.restore_edits_message)
+            .setPositiveButton(R.string.restore_edits_confirm) { _, _ ->
+                applyRestoredEditSession(snapshot)
+            }
+            .setNegativeButton(R.string.restore_edits_keep, null)
+            .show()
+    }
+
+    private fun applyRestoredEditSession(snapshot: EditingState.Snapshot) {
+        editingState = EditingState.restored(snapshot)
+        compareHeld = false
+        selectedCategory = EditorCategory.LIGHT
+        maskActiveTool = "Brush"
+        healingToolActive = false
+        healingToggleButton?.text = "Healing Tool: Off"
+        maskOverlayVisible = editingState.state.masking.selected().selection != null
+        cropOverlay.setImageAspect(sourceWidth, sourceHeight)
+        applyCropControlsFromState()
+        applyFilterControlsFromState()
+        updateAllRows()
+        updateOutputSummary()
+        refreshHistory()
+        rebuildMaskAdjustmentControls(findViewById(R.id.maskAdjustments))
+        refreshMaskOverlay?.invoke()
+        applyDisplayedBitmap()
+        requestPreviewRender()
+        syncUiState()
     }
 
     private fun showLoadFailure(
@@ -3417,6 +3579,8 @@ class MainActivity : Activity() {
         )
         qualitySpinner.isEnabled = canEdit
         sizeSpinner.isEnabled = canEdit
+        colorSpaceSpinner.isEnabled = canEdit
+        includeEditHistoryCheckBox.isEnabled = canEdit
         filterSpinner.isEnabled = canEdit
         filterIntensitySeekBar.isEnabled =
             canEdit && editingState.filter.filter != Filter.NATURAL
@@ -3599,6 +3763,10 @@ class MainActivity : Activity() {
         selectedSize = ExportSize.entries.getOrNull(
             savedState.getInt(STATE_SIZE, selectedSize.ordinal)
         ) ?: ExportSize.ORIGINAL
+        selectedColorSpace = ExportColorSpace.entries.getOrNull(
+            savedState.getInt(STATE_COLOR_SPACE, selectedColorSpace.ordinal)
+        ) ?: ExportColorSpace.SRGB
+        includeEditHistory = savedState.getBoolean(STATE_INCLUDE_HISTORY, true)
     }
 
     private fun restoreEditorCategory(savedState: Bundle?) {
@@ -3665,6 +3833,11 @@ class MainActivity : Activity() {
         JpegExporter.Stage.WRITING -> R.string.export_stage_writing
     }
 
+    private fun colorSpaceLabel(colorSpace: ExportColorSpace): Int = when (colorSpace) {
+        ExportColorSpace.SRGB -> R.string.color_space_srgb
+        ExportColorSpace.ADOBE_RGB -> R.string.color_space_adobe
+    }
+
     private fun qualityLabel(quality: ExportQuality): Int = when (quality) {
         ExportQuality.HIGH -> R.string.quality_high
         ExportQuality.STANDARD -> R.string.quality_standard
@@ -3712,6 +3885,8 @@ class MainActivity : Activity() {
         outState.putIntArray(STATE_REDO, EditStateCodec.encodeStack(snapshot.redo))
         outState.putInt(STATE_QUALITY, selectedQuality.ordinal)
         outState.putInt(STATE_SIZE, selectedSize.ordinal)
+        outState.putInt(STATE_COLOR_SPACE, selectedColorSpace.ordinal)
+        outState.putBoolean(STATE_INCLUDE_HISTORY, includeEditHistory)
         outState.putInt(STATE_CATEGORY, selectedCategory.ordinal)
         outState.putFloat(STATE_HEALING_RADIUS, healingRadius)
         outState.putBoolean(STATE_HEALING_TOOL, healingToolActive)
@@ -3859,6 +4034,8 @@ class MainActivity : Activity() {
         const val STATE_REDO = "m4_redo"
         const val STATE_QUALITY = "m4_quality"
         const val STATE_SIZE = "m4_size"
+        const val STATE_COLOR_SPACE = "m5_3_color_space"
+        const val STATE_INCLUDE_HISTORY = "m5_3_include_history"
         const val STATE_CATEGORY = "m5_2_category"
         const val STATE_HEALING_RADIUS = "m5_healing_radius"
         const val STATE_HEALING_TOOL = "m5_healing_tool"

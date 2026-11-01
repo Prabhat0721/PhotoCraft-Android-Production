@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import com.prabhat.photocraft.export.JpegMetadata
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -22,7 +23,8 @@ class PhotoLoader(private val resolver: ContentResolver) : Closeable {
             val bitmap: Bitmap,
             val displayName: String?,
             val sourceWidth: Int,
-            val sourceHeight: Int
+            val sourceHeight: Int,
+            val embeddedEditSession: String? = null
         ) : Result()
 
         data class Failure(val reason: FailureReason) : Result()
@@ -98,7 +100,8 @@ class PhotoLoader(private val resolver: ContentResolver) : Closeable {
                     bitmap = bitmap,
                     displayName = readDisplayName(uri),
                     sourceWidth = sourceSize.first,
-                    sourceHeight = sourceSize.second
+                    sourceHeight = sourceSize.second,
+                    embeddedEditSession = readEmbeddedEditSession(uri)
                 )
             }
         } catch (_: ImageDecoder.DecodeException) {
@@ -113,6 +116,20 @@ class PhotoLoader(private val resolver: ContentResolver) : Closeable {
             Result.Failure(FailureReason.DECODE_FAILED)
         } catch (_: OutOfMemoryError) {
             Result.Failure(FailureReason.TOO_LARGE)
+        }
+    }
+
+    private fun readEmbeddedEditSession(uri: Uri): String? {
+        return try {
+            resolver.openInputStream(uri)?.use { stream ->
+                JpegMetadata.readSession(stream)
+            }
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IOException) {
+            null
+        } catch (_: RuntimeException) {
+            null
         }
     }
 

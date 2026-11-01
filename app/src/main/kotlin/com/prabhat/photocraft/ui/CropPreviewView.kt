@@ -10,11 +10,13 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import com.prabhat.photocraft.edit.CropSelection
 import com.prabhat.photocraft.edit.HealingSpot
 import com.prabhat.photocraft.edit.MaskSelection
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -38,6 +40,60 @@ class CropPreviewView @JvmOverloads constructor(
     private var brushCursorX = 0f
     private var brushCursorY = 0f
     private var brushCursorRadius = 0f
+    private var zoom = 1f
+    private var panX = 0f
+    private var panY = 0f
+    private var zoomEnabled = true
+    private var multiTouchActive = false
+    private var maskGestureCanceled = false
+    private var lastTouchSourceX = 0f
+    private var lastTouchSourceY = 0f
+    private var lastFocusX = 0f
+    private var lastFocusY = 0f
+    private val scaleDetector = ScaleGestureDetector(
+        context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                if (!zoomEnabled) return false
+                multiTouchActive = true
+                if (!maskGestureCanceled) {
+                    maskTouchListener?.invoke(
+                        lastTouchSourceX,
+                        lastTouchSourceY,
+                        MotionEvent.ACTION_CANCEL
+                    )
+                    maskGestureCanceled = true
+                }
+                lastFocusX = detector.focusX
+                lastFocusY = detector.focusY
+                return true
+            }
+
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val previousZoom = zoom
+                val nextZoom = (zoom * detector.scaleFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                if (nextZoom == previousZoom) return true
+                val focusX = detector.focusX
+                val focusY = detector.focusY
+                val centerX = width / 2f
+                val centerY = height / 2f
+                val ratio = nextZoom / previousZoom
+                panX = focusX - centerX - (lastFocusX - centerX - panX) * ratio
+                panY = focusY - centerY - (lastFocusY - centerY - panY) * ratio
+                zoom = nextZoom
+                lastFocusX = focusX
+                lastFocusY = focusY
+                if (zoom <= MIN_ZOOM + 0.001f) {
+                    zoom = MIN_ZOOM
+                    panX = 0f
+                    panY = 0f
+                }
+                clampPan()
+                invalidate()
+                return true
+            }
+        }
+    )
     private val healingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 3f
@@ -72,6 +128,41 @@ class CropPreviewView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setBrushCursorAtSource(
+        sourceX: Float,
+        sourceY: Float,
+        radiusSource: Float,
+        sourceWidth: Int,
+        visible: Boolean
+    ) {
+        if (!visible || sourceWidth <= 0 || sourceRect.width() <= 0) {
+            setBrushCursor(0f, 0f, 0f, false)
+            return
+        }
+        val scale = destinationRect.width() / sourceRect.width()
+        val viewX = destinationRect.left + (sourceX - sourceRect.left) * scale
+        val viewY = destinationRect.top + (sourceY - sourceRect.top) * scale
+        setBrushCursor(viewX, viewY, radiusSource * scale, true)
+    }
+
+    fun setZoomEnabled(enabled: Boolean) {
+        zoomEnabled = enabled
+        if (!enabled) {
+            resetZoom()
+        }
+    }
+
+    fun resetZoom() {
+        zoom = MIN_ZOOM
+        panX = 0f
+        panY = 0f
+        multiTouchActive = false
+        maskGestureCanceled = false
+        invalidate()
+    }
+
+    fun getZoomScale(): Float = zoom
+
     fun setMaskTouchListener(listener: ((Float, Float, Int) -> Boolean)?) {
         maskTouchListener = listener
     }
@@ -104,6 +195,8 @@ class CropPreviewView @JvmOverloads constructor(
 
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+        scaleDetector.isQuickScaleEnabled = false
+        scaleDetector.isStylusScaleEnabled = false
     }
 
     fun setBitmap(bitmap: Bitmap?) {
@@ -117,19 +210,38 @@ class CropPreviewView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val listener = maskTouchListener ?: return super.onTouchEvent(event)
+        if (zoomEnabled) {
+            scaleDetector.onTouchEvent(event)
+        }
+
+        if (event.pointerCount > 1) {
+            multiTouchActive = true
+        }
+        if (multiTouchActive) {
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                multiTouchActive = false
+                maskGestureCanceled = false
+            }
+            return true
+        }
+
+        val listener = maskTouchListener ?: return zoomEnabled || super.onTouchEvent(event)
 
         if (event.actionMasked == MotionEvent.ACTION_DOWN &&
             !destinationRect.contains(event.x, event.y)
-        ) return false
+        ) return zoomEnabled
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE,
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> Unit
-            else -> return super.onTouchEvent(event)
+            else -> return zoomEnabled || super.onTouchEvent(event)
         }
 
-        if (destinationRect.width() <= 0f || destinationRect.height() <= 0f) return false
+        if (destinationRect.width() <= 0f || destinationRect.height() <= 0f) {
+            return zoomEnabled
+        }
 
         val sx = (sourceRect.left +
             (event.x - destinationRect.left) / destinationRect.width() * sourceRect.width())
@@ -137,8 +249,34 @@ class CropPreviewView @JvmOverloads constructor(
         val sy = (sourceRect.top +
             (event.y - destinationRect.top) / destinationRect.height() * sourceRect.height())
             .coerceIn(sourceRect.top.toFloat(), sourceRect.bottom.toFloat() - 1f)
+        lastTouchSourceX = sx
+        lastTouchSourceY = sy
 
-        return listener(sx, sy, event.actionMasked)
+        return listener(sx, sy, event.actionMasked) || zoomEnabled
+    }
+
+    private fun clampPan() {
+        if (sourceRect.width() <= 0 || sourceRect.height() <= 0 ||
+            width <= 0 || height <= 0
+        ) {
+            panX = 0f
+            panY = 0f
+            return
+        }
+        val baseScale = min(
+            width.toFloat() / sourceRect.width(),
+            height.toFloat() / sourceRect.height()
+        )
+        val maxPanX = max(
+            0f,
+            (sourceRect.width() * baseScale * zoom - width) / 2f
+        )
+        val maxPanY = max(
+            0f,
+            (sourceRect.height() * baseScale * zoom - height) / 2f
+        )
+        panX = panX.coerceIn(-maxPanX, maxPanX)
+        panY = panY.coerceIn(-maxPanY, maxPanY)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -156,14 +294,15 @@ class CropPreviewView @JvmOverloads constructor(
             .coerceIn(sourceTop + 1, image.height)
         sourceRect.set(sourceLeft, sourceTop, sourceRight, sourceBottom)
 
+        clampPan()
         val scale = min(
             width.toFloat() / sourceRect.width(),
             height.toFloat() / sourceRect.height()
-        )
+        ) * zoom
         val destinationWidth = sourceRect.width() * scale
         val destinationHeight = sourceRect.height() * scale
-        val left = (width - destinationWidth) / 2f
-        val top = (height - destinationHeight) / 2f
+        val left = (width - destinationWidth) / 2f + panX
+        val top = (height - destinationHeight) / 2f + panY
         destinationRect.set(left, top, left + destinationWidth, top + destinationHeight)
         canvas.drawBitmap(image, sourceRect, destinationRect, paint)
 
@@ -195,5 +334,10 @@ class CropPreviewView @JvmOverloads constructor(
             )
             canvas.drawCircle(brushCursorX, brushCursorY, brushCursorRadius, brushCursorPaint)
         }
+    }
+
+    private companion object {
+        const val MIN_ZOOM = 1f
+        const val MAX_ZOOM = 6f
     }
 }

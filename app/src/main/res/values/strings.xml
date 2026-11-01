@@ -127,6 +127,16 @@
     <string name="size_long_1080">Long edge • 1080 px</string>
     <string name="output_summary">Output: %1$d × %2$d • %3$s</string>
     <string name="output_summary_estimate">Output estimate: %1$d × %2$d • %3$s</string>
+
+    <string name="color_space_label">Color space</string>
+    <string name="color_space_srgb">sRGB</string>
+    <string name="color_space_adobe">Adobe RGB (1998)</string>
+    <string name="include_edit_history">Embed edit history in JPEG</string>
+    <string name="restore_edits_title">Restore PhotoCraft edits?</string>
+    <string name="restore_edits_message">This JPEG contains PhotoCraft edit settings and undo history. Restore them to continue editing, or keep the photo as-is.</string>
+    <string name="restore_edits_confirm">Restore edits</string>
+    <string name="restore_edits_keep">Keep photo</string>
+
     <string name="export_jpeg">Export JPEG</string>
     <string name="exporting">Exporting JPEG</string>
     <string name="export_cancel">Cancel export</string>

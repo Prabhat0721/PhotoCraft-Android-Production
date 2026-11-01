@@ -14,6 +14,11 @@ enum class ExportQuality(val jpegQuality: Int) {
     SMALLER_FILE(70)
 }
 
+enum class ExportColorSpace {
+    SRGB,
+    ADOBE_RGB
+}
+
 enum class ExportSize(val percent: Int?, val longEdgePx: Int?) {
     ORIGINAL(null, null),
     PERCENT_75(75, null),
@@ -62,5 +67,8 @@ data class ExportRequest(
     val healing: HealingSettings = HealingSettings.NEUTRAL,
     val sourceWidth: Int = 0,
     val sourceHeight: Int = 0,
-    val masking: MaskingState = MaskingState()
+    val masking: MaskingState = MaskingState(),
+    val colorSpace: ExportColorSpace = ExportColorSpace.SRGB,
+    val iccProfile: ByteArray? = null,
+    val editSessionPayload: String? = null
 )

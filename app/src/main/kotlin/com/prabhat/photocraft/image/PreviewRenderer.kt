@@ -114,8 +114,9 @@ class PreviewRenderer : Closeable {
             CurvesMath.applyInPlace(pixels, curves)
             HealingMath.applyInPlace(pixels, width, height, healing)
 
-            // Apply each enabled local mask and blend by its coverage.
+            // Apply only the selected local mask and blend by its coverage.
             for (layer in masking.layers) {
+                if (layer.type != masking.selectedMask) continue
                 if (!layer.enabled) continue
                 val selection = layer.selection ?: continue
                 val local = layer.adjustments

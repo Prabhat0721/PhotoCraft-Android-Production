@@ -164,6 +164,14 @@
                         android:layout_marginTop="28dp"
                         android:text="@string/open_photo" />
 
+                    <Button
+                        android:id="@+id/projectsButton"
+                        style="@style/PhotoCraftButtonSecondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="46dp"
+                        android:layout_marginTop="10dp"
+                        android:text="@string/empty_projects" />
+
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -229,6 +237,17 @@
                             android:maxLines="1"
                             android:textColor="#E6FFFFFF"
                             android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/projectSaveStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:accessibilityLiveRegion="polite"
+                            android:fontFamily="sans-serif"
+                            android:textColor="#B3FFFFFF"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
 
                         <TextView
                             android:id="@+id/editedBadge"
@@ -1218,6 +1237,21 @@
                             android:layout_marginTop="8dp"
                             android:checked="true"
                             android:text="@string/include_edit_history" />
+
+                        <CheckBox
+                            android:id="@+id/galleryExportCheckBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:checked="true"
+                            android:text="@string/export_to_gallery" />
+
+                        <TextView
+                            style="@style/PhotoCraftFieldValue"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="@string/export_to_gallery_hint" />
 
                         <TextView
                             android:id="@+id/outputSummary"

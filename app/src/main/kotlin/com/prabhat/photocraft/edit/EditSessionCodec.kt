@@ -9,11 +9,20 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 object EditSessionCodec {
-    const val VERSION = 1
+    const val VERSION = 2
     const val MASK_MAX_EDGE = 192
     const val MAX_METADATA_BYTES = 2_000_000
 
-    fun encode(snapshot: EditingState.Snapshot): String? {
+    fun encode(snapshot: EditingState.Snapshot): String? =
+        encode(snapshot, MAX_METADATA_BYTES)
+
+    fun encodeFull(snapshot: EditingState.Snapshot): String? =
+        encode(snapshot, Int.MAX_VALUE)
+
+    private fun encode(
+        snapshot: EditingState.Snapshot,
+        maxBytes: Int
+    ): String? {
         return try {
             val root = JSONObject()
             root.put("v", VERSION)
@@ -26,7 +35,7 @@ object EditSessionCodec {
                 root.put("undo", historyToJson(undoStates, undoLabels))
                 root.put("redo", historyToJson(snapshot.redo, snapshot.redoLabels))
                 val compressed = gzip(root.toString().toByteArray(Charsets.UTF_8))
-                if (compressed.size <= MAX_METADATA_BYTES || undoStates.isEmpty()) {
+                if (compressed.size <= maxBytes || undoStates.isEmpty()) {
                     return Base64.encodeToString(compressed, Base64.NO_WRAP)
                 }
                 undoStates = undoStates.drop(1)
@@ -47,7 +56,7 @@ object EditSessionCodec {
                 it.readBytes().toString(Charsets.UTF_8)
             }
             val root = JSONObject(json)
-            if (root.optInt("v", 0) != VERSION) return null
+            if (root.optInt("v", 0) !in 1..VERSION) return null
             val current = currentFromJson(root.optJSONObject("current") ?: return null)
                 ?: return null
             val undo = historyFromJson(root.optJSONArray("undo"))
@@ -87,6 +96,7 @@ object EditSessionCodec {
             put(JSONObject().apply {
                 put("m5", ints(M5StateCodec.encode(state)))
                 put("healing", healingToJson(state.healing))
+                put("masking", maskingToJson(state.masking))
                 put("label", labels.getOrNull(index).orEmpty())
             })
         }
@@ -100,7 +110,10 @@ object EditSessionCodec {
             val item = json.optJSONObject(index) ?: continue
             val base = M5StateCodec.decode(ints(item.optJSONArray("m5"))) ?: continue
             states.add(
-                base.copy(healing = healingFromJson(item.optJSONArray("healing")))
+                base.copy(
+                    healing = healingFromJson(item.optJSONArray("healing")),
+                    masking = maskingFromJson(item.optJSONObject("masking"))
+                )
             )
             labels.add(item.optString("label", ""))
         }

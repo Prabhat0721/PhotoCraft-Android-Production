@@ -121,6 +121,7 @@
     <string name="subject_detection_failed">Subject detection failed: %1$s</string>
     <string name="try_again">Try again</string>
     <string name="healing_tool_off">Healing Tool: Off</string>
+    <string name="healing_tool_on">Healing Tool: On</string>
     <string name="retry">Retry</string>
     <string name="retry_pick">Pick Again</string>
     <string name="error_invalid_uri">That photo location could not be opened. Choose another image.</string>
@@ -179,4 +180,36 @@
     <string name="error_export_same_file">Choose a different destination. The original photo cannot be overwritten.</string>
     <string name="error_export_write">The JPEG could not be saved. Choose a destination and try again.</string>
     <string name="error_export_no_destination">No destination was returned. Try exporting again.</string>
+
+    <string name="project_library_title">Projects</string>
+    <string name="project_library_subtitle">Private copies stay inside PhotoCraft. Your originals in Gallery are untouched.</string>
+    <string name="project_library_empty">No saved projects yet.\nImport a photo to start one.</string>
+    <string name="project_library_new">New Photo</string>
+    <string name="project_library_back">Back</string>
+    <string name="project_library_delete">Delete project</string>
+    <string name="project_item_meta">%1$d × %2$d • %3$s</string>
+    <string name="project_item_meta_unknown">Saved %1$s</string>
+    <string name="project_item_exported">Exported</string>
+    <string name="project_item_meta_suffix">%1$s • %2$s</string>
+    <string name="project_delete_title">Delete project?</string>
+    <string name="project_delete_message">Delete “%1$s” and its private copy? The original in Gallery is not affected.</string>
+    <string name="project_delete_confirm">Delete</string>
+    <string name="project_delete_cancel">Cancel</string>
+    <string name="project_saved">Saved</string>
+    <string name="project_saving">Saving…</string>
+    <string name="project_save_failed">Save failed</string>
+    <string name="project_importing">Importing photo</string>
+    <string name="menu_projects">Projects</string>
+    <string name="empty_projects">Project Library</string>
+    <string name="export_to_gallery">Save to Gallery</string>
+    <string name="export_to_gallery_hint">Saves to Pictures/PhotoCraft. Uncheck to choose a folder with Save As.</string>
+    <string name="error_project_missing">This project\'s private copy is missing. It may have been deleted.</string>
+    <string name="error_project_import_invalid">That photo location could not be imported.</string>
+    <string name="error_project_import_access">Photo access expired before the private copy was created.</string>
+    <string name="error_project_import_storage">Not enough storage to import this photo.</string>
+    <string name="error_project_import_decode">The photo could not be decoded for the project.</string>
+    <string name="error_project_import_unsupported">This image is unsupported or damaged.</string>
+    <string name="error_project_import_too_large">This photo is too large to import safely.</string>
+    <string name="error_project_import_copy">Could not create a private copy of this photo.</string>
+    <string name="error_gallery_export_create">Could not create a Gallery item. Try Save As instead.</string>
 </resources>

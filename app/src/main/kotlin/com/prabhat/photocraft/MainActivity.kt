@@ -72,9 +72,17 @@ import com.prabhat.photocraft.export.ExportPlanner
 import com.prabhat.photocraft.export.ExportQuality
 import com.prabhat.photocraft.export.ExportRequest
 import com.prabhat.photocraft.export.ExportSize
+import com.prabhat.photocraft.export.GalleryExportTarget
 import com.prabhat.photocraft.export.JpegExporter
 import com.prabhat.photocraft.image.PhotoLoader
 import com.prabhat.photocraft.image.PreviewRenderer
+import com.prabhat.photocraft.project.DraftAutosave
+import com.prabhat.photocraft.project.Project
+import com.prabhat.photocraft.project.ProjectDraftCodec
+import com.prabhat.photocraft.project.ProjectFiles
+import com.prabhat.photocraft.project.ProjectImporter
+import com.prabhat.photocraft.project.ProjectStore
+import com.prabhat.photocraft.project.ProjectUiState
 import com.prabhat.photocraft.preset.Preset
 import com.prabhat.photocraft.preset.PresetName
 import com.prabhat.photocraft.preset.PresetStore
@@ -84,6 +92,7 @@ import com.prabhat.photocraft.ui.CropOverlayView
 import com.prabhat.photocraft.ui.CropPreviewView
 import com.prabhat.photocraft.ui.CurveEditorView
 import com.prabhat.photocraft.ui.EditorSliderView
+import com.prabhat.photocraft.ui.ProjectLibraryActivity
 import com.prabhat.photocraft.util.PhotoRestore
 import kotlin.math.roundToInt
 
@@ -167,6 +176,9 @@ class MainActivity : Activity() {
     private lateinit var exportStatus: TextView
     private lateinit var exportStatusRow: View
     private lateinit var exportCancelButton: Button
+    private lateinit var galleryExportCheckBox: CheckBox
+    private lateinit var projectsButton: Button
+    private lateinit var projectSaveStatus: TextView
     private lateinit var lightControls: LinearLayout
     private lateinit var colorControls: LinearLayout
     private lateinit var hslControls: LinearLayout
@@ -181,6 +193,7 @@ class MainActivity : Activity() {
     private var healingToggleButton: Button? = null
     private var maskActiveTool = "Brush"
     private var maskOverlayVisible = false
+    private var maskOverlayToggle: CheckBox? = null
     private var requestSubjectDetection: (() -> Unit)? = null
     private var maskPixelBuffer: IntArray? = null
     private var maskPixelBitmap: Bitmap? = null
@@ -195,6 +208,9 @@ class MainActivity : Activity() {
     private lateinit var renderer: PreviewRenderer
     private lateinit var exporter: JpegExporter
     private lateinit var presetStore: PresetStore
+    private lateinit var projectStore: ProjectStore
+    private lateinit var projectImporter: ProjectImporter
+    private lateinit var draftAutosave: DraftAutosave
     private var backCallback: OnBackInvokedCallback? = null
 
     private val exportGate = ExportGate()
@@ -212,6 +228,10 @@ class MainActivity : Activity() {
     private var pendingUri: Uri? = null
     private var pendingUriPersisted = false
     private var pendingResetEdits = true
+    private var pendingProject: Project? = null
+    private var pendingProjectRestoreDraft = false
+    private var currentProjectId: String? = null
+    private var currentProject: Project? = null
     private var pendingDestinationTitle: String? = null
     private var exportPickerStartedAtMs = 0L
     private var pendingExportRequest: ExportRequest? = null
@@ -227,6 +247,7 @@ class MainActivity : Activity() {
     private var selectedSize = ExportSize.ORIGINAL
     private var selectedColorSpace = ExportColorSpace.SRGB
     private var includeEditHistory = true
+    private var galleryExport = true
     private var sourceWidth = 0
     private var sourceHeight = 0
     private var suppressCropEvents = false
@@ -241,6 +262,20 @@ class MainActivity : Activity() {
         renderer = PreviewRenderer()
         exporter = JpegExporter(contentResolver, cacheDir)
         presetStore = PresetStore(this)
+        projectStore = ProjectStore(this)
+        ProjectFiles.cleanupPartFiles(this)
+        projectImporter = ProjectImporter(this, projectStore)
+        draftAutosave = DraftAutosave(this, projectStore) { projectId, saved ->
+            if (!isDestroyed && !isFinishing && projectId == currentProjectId) {
+                projectSaveStatus.text = getString(
+                    if (saved) R.string.project_saved else R.string.project_save_failed
+                )
+                projectSaveStatus.setTextColor(
+                    getColor(if (saved) R.color.text_secondary else R.color.error)
+                )
+                projectSaveStatus.visibility = View.VISIBLE
+            }
+        }
         restoreEditingState(savedInstanceState)
         restoreExportOptions(savedInstanceState)
         restoreEditorCategory(savedInstanceState)
@@ -260,6 +295,14 @@ class MainActivity : Activity() {
         applyFilterControlsFromState()
         refreshHistory()
         syncUiState()
+
+        val restoredProjectId = savedInstanceState?.getString(STATE_PROJECT_ID)
+        if (restoredProjectId != null) {
+            if (!openProject(restoredProjectId, restoreDraft = true)) {
+                restoreLatestProject()
+            }
+            return
+        }
 
         val restoredSelected = savedInstanceState?.let { state ->
             state.getString(STATE_SELECTED_URI)?.let { uri ->
@@ -300,6 +343,9 @@ class MainActivity : Activity() {
                 resetEdits = photo.resetEdits
             )
         }
+        if (savedInstanceState == null) {
+            restoreLatestProject()
+        }
     }
 
     private fun bindViews() {
@@ -310,6 +356,7 @@ class MainActivity : Activity() {
         editorPanel = findViewById(R.id.editorPanel)
         topTitle = findViewById(R.id.topTitle)
         openPhotoButton = findViewById(R.id.openPhotoButton)
+        projectsButton = findViewById(R.id.projectsButton)
         changePhotoButton = findViewById(R.id.changePhotoButton)
         previewCard = findViewById(R.id.previewCard)
         previewCard.clipToOutline = true
@@ -367,6 +414,8 @@ class MainActivity : Activity() {
         exportStatus = findViewById(R.id.exportStatus)
         exportStatusRow = findViewById(R.id.exportStatusRow)
         exportCancelButton = findViewById(R.id.exportCancelButton)
+        galleryExportCheckBox = findViewById(R.id.galleryExportCheckBox)
+        projectSaveStatus = findViewById(R.id.projectSaveStatus)
         lightControls = findViewById(R.id.lightControls)
         colorControls = findViewById(R.id.colorControls)
         hslControls = findViewById(R.id.hslControls)
@@ -530,6 +579,13 @@ class MainActivity : Activity() {
         includeEditHistoryCheckBox.setOnCheckedChangeListener { _, checked ->
             includeEditHistory = checked
             clearExportStatus()
+        }
+
+        galleryExportCheckBox.isChecked = galleryExport
+        galleryExportCheckBox.setOnCheckedChangeListener { _, checked ->
+            galleryExport = checked
+            clearExportStatus()
+            syncUiState()
         }
 
         val ratioAdapter = ArrayAdapter(
@@ -1673,6 +1729,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
+        maskOverlayToggle = overlayToggle
 
         val optionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1824,7 +1881,7 @@ class MainActivity : Activity() {
     }
 
     private fun clearSelectedMask() {
-        maskOverlayVisible = false
+        setMaskOverlayVisible(false)
         val masking = editingState.state.masking
         val updated = masking.withLayer(
             masking.selected().copy(selection = null, inverted = false)
@@ -1940,6 +1997,7 @@ class MainActivity : Activity() {
         }
 
         fun refreshMaskStatus() {
+            maskOverlayToggle?.isChecked = maskOverlayVisible
             val masking = editingState.state.masking
             val layer = masking.selected()
             statusText.text = getString(
@@ -1974,7 +2032,7 @@ class MainActivity : Activity() {
         refreshMaskOverlay = { refreshMaskStatus() }
 
         fun selectMask(type: com.prabhat.photocraft.edit.MaskType) {
-            maskOverlayVisible = true
+            setMaskOverlayVisible(true)
             editingState.updateMasking(
                 editingState.state.masking.selectMask(type), "Select Mask"
             )
@@ -1994,7 +2052,7 @@ class MainActivity : Activity() {
             val updated = masking.withLayer(
                 masking.selected().copy(selection = selection, inverted = false)
             )
-            maskOverlayVisible = true
+            setMaskOverlayVisible(true)
             editingState.updateMasking(updated, label)
             refreshMaskStatus()
             if (!hadSelection) {
@@ -2056,7 +2114,7 @@ class MainActivity : Activity() {
                     .withLayer(current.subject.copy(selection = subject, inverted = false))
                     .withLayer(current.background.copy(selection = background, inverted = false))
                     .selectMask(type)
-                maskOverlayVisible = true
+                setMaskOverlayVisible(true)
                 editingState.updateMasking(updated, "Auto Select $type")
                 refreshMaskStatus()
                 rebuildMaskAdjustmentControls(maskAdjustments)
@@ -2098,7 +2156,7 @@ class MainActivity : Activity() {
                             )
                         )
                         .selectMask(type)
-                    maskOverlayVisible = true
+                    setMaskOverlayVisible(true)
                     editingState.updateMasking(latest, "Auto Select $type")
                     refreshMaskStatus()
                     rebuildMaskAdjustmentControls(maskAdjustments)
@@ -2396,6 +2454,7 @@ class MainActivity : Activity() {
 
     private fun wireControls() {
         openPhotoButton.setOnClickListener { openPhotoPicker() }
+        projectsButton.setOnClickListener { openProjectLibrary() }
         changePhotoButton.setOnClickListener { openPhotoPicker() }
 
         undoButton.setOnClickListener {
@@ -2471,14 +2530,16 @@ class MainActivity : Activity() {
             return
         }
         val popup = PopupMenu(this, overflowButton)
-        popup.menu.add(Menu.NONE, MENU_PRESETS, 0, R.string.preset_title)
-        popup.menu.add(Menu.NONE, MENU_HISTORY, 1, R.string.history_title)
-        popup.menu.add(Menu.NONE, MENU_EXPORT, 2, R.string.export_title)
-        popup.menu.add(Menu.NONE, MENU_RESET, 3, R.string.reset)
-        popup.menu.add(Menu.NONE, MENU_CHANGE_PHOTO, 4, R.string.change_photo)
+        popup.menu.add(Menu.NONE, MENU_PROJECTS, 0, R.string.menu_projects)
+        popup.menu.add(Menu.NONE, MENU_PRESETS, 1, R.string.preset_title)
+        popup.menu.add(Menu.NONE, MENU_HISTORY, 2, R.string.history_title)
+        popup.menu.add(Menu.NONE, MENU_EXPORT, 3, R.string.export_title)
+        popup.menu.add(Menu.NONE, MENU_RESET, 4, R.string.reset)
+        popup.menu.add(Menu.NONE, MENU_CHANGE_PHOTO, 5, R.string.change_photo)
         popup.menu.findItem(MENU_RESET)?.isEnabled = editingState.isModified
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                MENU_PROJECTS -> openProjectLibrary()
                 MENU_PRESETS -> showActionSheet(R.string.preset_title, presetPanel)
                 MENU_HISTORY -> showActionSheet(R.string.history_title, historyPanel)
                 MENU_EXPORT -> showActionSheet(R.string.export_title, exportPanel)
@@ -2746,6 +2807,250 @@ class MainActivity : Activity() {
         syncUiState()
     }
 
+    private fun openProjectLibrary() {
+        if (loadingPhoto || exportGate.isExporting) {
+            return
+        }
+        endCompare()
+        hideActionSheet()
+        hideError()
+        draftAutosave.flush()
+        startActivityForResult(
+            Intent(this, ProjectLibraryActivity::class.java),
+            REQUEST_PROJECT_LIBRARY
+        )
+    }
+
+    private fun restoreLatestProject() {
+        if (loadingPhoto || exportGate.isExporting) {
+            return
+        }
+        projectStore.latest()?.let { project ->
+            openProject(project.id, restoreDraft = true)
+        }
+    }
+
+    private fun openProject(projectId: String, restoreDraft: Boolean): Boolean {
+        if (loadingPhoto || exportGate.isExporting) {
+            return false
+        }
+        val project = projectStore.get(projectId)
+        if (project == null) {
+            showError(
+                message = getString(R.string.error_project_missing),
+                actionLabel = R.string.retry_pick,
+                action = ::openPhotoPicker
+            )
+            return false
+        }
+        if (!project.sourceFile.isFile) {
+            projectStore.delete(projectId)
+            ProjectFiles.deleteProject(this, projectId)
+            if (currentProjectId == projectId) {
+                detachCurrentProject()
+            }
+            showError(
+                message = getString(R.string.error_project_missing),
+                actionLabel = R.string.retry_pick,
+                action = ::openPhotoPicker
+            )
+            return false
+        }
+        if (projectId == currentProjectId && sourceBitmap != null) {
+            return true
+        }
+        draftAutosave.flush()
+        projectStore.markOpened(projectId, System.currentTimeMillis())
+        loadPhoto(
+            uri = Uri.fromFile(project.sourceFile),
+            persisted = false,
+            resetEdits = true,
+            project = project,
+            restoreDraft = restoreDraft
+        )
+        return true
+    }
+
+    private fun importProject(uri: Uri, persisted: Boolean) {
+        if (loadingPhoto || exportGate.isExporting) {
+            return
+        }
+        clearExportStatus()
+        hideError()
+        hideActionSheet()
+        endCompare()
+        loadingPhoto = true
+        loadOverlay.visibility = View.VISIBLE
+        renderIndicator.visibility = View.GONE
+        emptyState.visibility = View.GONE
+        editorPanel.visibility = View.VISIBLE
+        if (sourceBitmap == null) {
+            previewMeta.text = getString(R.string.project_importing)
+        }
+        syncUiState()
+
+        projectImporter.import(uri) { result ->
+            if (isDestroyed || isFinishing) {
+                return@import
+            }
+            loadingPhoto = false
+            loadOverlay.visibility = View.GONE
+            if (persisted) {
+                releasePersistedRead(uri)
+            }
+            when (result) {
+                is ProjectImporter.Result.Success -> {
+                    openProject(result.project.id, restoreDraft = false)
+                }
+
+                is ProjectImporter.Result.Failure -> {
+                    if (sourceBitmap == null) {
+                        emptyState.visibility = View.VISIBLE
+                        editorPanel.visibility = View.GONE
+                    }
+                    showError(
+                        message = getString(importFailureMessage(result.reason)),
+                        actionLabel = R.string.retry_pick,
+                        action = ::openPhotoPicker
+                    )
+                    syncUiState()
+                }
+            }
+        }
+    }
+
+    private fun importFailureMessage(reason: ProjectImporter.FailureReason): Int = when (reason) {
+        ProjectImporter.FailureReason.INVALID_URI -> R.string.error_project_import_invalid
+        ProjectImporter.FailureReason.ACCESS_DENIED -> R.string.error_project_import_access
+        ProjectImporter.FailureReason.INSUFFICIENT_STORAGE ->
+            R.string.error_project_import_storage
+
+        ProjectImporter.FailureReason.DECODE_FAILED -> R.string.error_project_import_decode
+        ProjectImporter.FailureReason.UNSUPPORTED_OR_CORRUPT ->
+            R.string.error_project_import_unsupported
+
+        ProjectImporter.FailureReason.TOO_LARGE -> R.string.error_project_import_too_large
+        ProjectImporter.FailureReason.COPY_FAILED -> R.string.error_project_import_copy
+    }
+
+    private fun detachCurrentProject() {
+        draftAutosave.cancel()
+        currentProjectId = null
+        currentProject = null
+        if (::projectSaveStatus.isInitialized) {
+            projectSaveStatus.visibility = View.GONE
+        }
+    }
+
+    private fun clearDeletedProject() {
+        adjustedBitmap?.takeIf { it !== sourceBitmap }?.recycle()
+        adjustedBitmap = null
+        sourceBitmap?.recycle()
+        sourceBitmap = null
+        selectedUri = null
+        selectedUriPersisted = false
+        pendingUri = null
+        pendingUriPersisted = false
+        pendingProject = null
+        pendingProjectRestoreDraft = false
+        currentDisplayName = null
+        sourceWidth = 0
+        sourceHeight = 0
+        editingState = EditingState()
+        compareHeld = false
+        selectedCategory = EditorCategory.LIGHT
+        maskActiveTool = "Brush"
+        healingToolActive = false
+        healingToggleButton?.text = getString(R.string.healing_tool_off)
+        setMaskOverlayVisible(false)
+        previewImage.setBitmap(null)
+        previewImage.resetZoom()
+        emptyState.visibility = View.VISIBLE
+        editorPanel.visibility = View.GONE
+        loadOverlay.visibility = View.GONE
+        projectSaveStatus.visibility = View.GONE
+        hideActionSheet()
+        hideError()
+        refreshHistory()
+        syncUiState()
+    }
+
+    private fun setMaskOverlayVisible(visible: Boolean) {
+        maskOverlayVisible = visible
+        maskOverlayToggle?.isChecked = visible
+    }
+
+    private fun applyProjectUiState(uiState: ProjectUiState) {
+        selectedCategory = EditorCategory.entries.firstOrNull {
+            it.name == uiState.category
+        } ?: EditorCategory.LIGHT
+        selectedQuality = ExportQuality.entries.getOrNull(uiState.qualityOrdinal)
+            ?: ExportQuality.HIGH
+        selectedSize = ExportSize.entries.getOrNull(uiState.sizeOrdinal)
+            ?: ExportSize.ORIGINAL
+        selectedColorSpace = ExportColorSpace.entries.getOrNull(uiState.colorSpaceOrdinal)
+            ?: ExportColorSpace.SRGB
+        includeEditHistory = uiState.includeEditHistory
+        healingRadius = uiState.healingRadius.coerceIn(0.01f, 0.15f)
+        healingToolActive = uiState.healingToolActive
+        healingToggleButton?.text = getString(
+            if (healingToolActive) R.string.healing_tool_on else R.string.healing_tool_off
+        )
+        curveChannel = CurveChannel.entries.getOrNull(uiState.curveChannelOrdinal)
+            ?: CurveChannel.RGB
+        setMaskOverlayVisible(uiState.maskOverlayVisible)
+        maskActiveTool = uiState.maskActiveTool.takeIf {
+            it in MASK_ACTIVE_TOOLS
+        } ?: "Brush"
+        qualitySpinner.setSelection(selectedQuality.ordinal)
+        sizeSpinner.setSelection(selectedSize.ordinal)
+        colorSpaceSpinner.setSelection(selectedColorSpace.ordinal)
+        includeEditHistoryCheckBox.isChecked = includeEditHistory
+        updateCurveChannelButtons()
+        curveEditor?.setCurve(curveForChannel(editingState.state.curves, curveChannel))
+    }
+
+    private fun currentProjectUiState(): ProjectUiState = ProjectUiState(
+        category = selectedCategory.name,
+        qualityOrdinal = selectedQuality.ordinal,
+        sizeOrdinal = selectedSize.ordinal,
+        colorSpaceOrdinal = selectedColorSpace.ordinal,
+        includeEditHistory = includeEditHistory,
+        healingRadius = healingRadius,
+        healingToolActive = healingToolActive,
+        curveChannelOrdinal = curveChannel.ordinal,
+        maskOverlayVisible = maskOverlayVisible,
+        maskActiveTool = maskActiveTool
+    )
+
+    private fun scheduleProjectAutosave() {
+        val projectId = currentProjectId ?: return
+        if (loadingPhoto || exportGate.isExporting || sourceBitmap == null) {
+            return
+        }
+        if (pendingProject != null) {
+            return
+        }
+        projectSaveStatus.text = getString(R.string.project_saving)
+        projectSaveStatus.setTextColor(getColor(R.color.text_secondary))
+        projectSaveStatus.visibility = View.VISIBLE
+        draftAutosave.schedule(
+            projectId = projectId,
+            snapshot = editingState.snapshot(),
+            uiState = currentProjectUiState()
+        )
+    }
+
+    private fun markCurrentProjectExported(exportUri: Uri) {
+        val projectId = currentProjectId ?: return
+        val now = System.currentTimeMillis()
+        projectStore.markExported(projectId, exportUri.toString(), now)
+        currentProject = projectStore.get(projectId)
+        projectSaveStatus.text = getString(R.string.project_item_exported)
+        projectSaveStatus.setTextColor(getColor(R.color.accent))
+        projectSaveStatus.visibility = View.VISIBLE
+    }
+
     private fun openPhotoPicker() {
         if (loadingPhoto || exportGate.isExporting) {
             return
@@ -2770,10 +3075,52 @@ class MainActivity : Activity() {
     }
 
     private fun startExport() {
+        if (galleryExportCheckBox.isChecked) {
+            startGalleryExport()
+        } else {
+            startSaveAsExport()
+        }
+    }
+
+    private fun startGalleryExport() {
+        if (!canEditPhoto()) {
+            return
+        }
+        val source = selectedUri ?: return
+        endCompare()
+        draftAutosave.flush()
+        val request = buildExportRequest() ?: return
+        val displayName = ExportNaming.suggestedFileName(currentDisplayName)
+        val destination = GalleryExportTarget.create(contentResolver, displayName)
+        if (destination == null) {
+            showError(
+                message = getString(R.string.error_gallery_export_create),
+                actionLabel = R.string.retry_export,
+                action = ::startExport
+            )
+            return
+        }
+        hideError()
+        clearExportStatus()
+        if (!exportGate.tryStart()) {
+            GalleryExportTarget.discard(contentResolver, destination)
+            return
+        }
+        beginExport(
+            source = source,
+            destination = destination,
+            request = request,
+            attestation = DestinationAttestation.NONE,
+            galleryPending = true
+        )
+    }
+
+    private fun startSaveAsExport() {
         if (!canEditPhoto() || selectedUri == null) {
             return
         }
         endCompare()
+        draftAutosave.flush()
         val request = buildExportRequest() ?: return
         val suggestedName = ExportNaming.suggestedFileName(currentDisplayName)
 
@@ -2812,6 +3159,30 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
+        if (requestCode == REQUEST_PROJECT_LIBRARY) {
+            val openProjectId = currentProjectId
+            if (openProjectId != null && projectStore.get(openProjectId) == null) {
+                detachCurrentProject()
+                clearDeletedProject()
+            }
+            if (resultCode == RESULT_OK) {
+                val projectId = data?.getStringExtra(
+                    ProjectLibraryActivity.EXTRA_PROJECT_ID
+                )
+                if (projectId != null) {
+                    openProject(projectId, restoreDraft = true)
+                } else if (
+                    data?.getBooleanExtra(
+                        ProjectLibraryActivity.EXTRA_NEW_PHOTO,
+                        false
+                    ) == true
+                ) {
+                    openPhotoPicker()
+                }
+            }
+            return
+        }
+
         if (requestCode == REQUEST_CREATE_JPEG) {
             handleExportResult(resultCode, data)
             return
@@ -2838,11 +3209,15 @@ class MainActivity : Activity() {
         val persisted = alreadyPersisted || takePersistableRead(uri, data.flags)
         val resetEdits = selectedUri != uri
         pendingResetEdits = resetEdits
-        loadPhoto(
-            uri = uri,
-            persisted = persisted,
-            resetEdits = resetEdits
-        )
+        if (resetEdits) {
+            importProject(uri, persisted)
+        } else {
+            loadPhoto(
+                uri = uri,
+                persisted = persisted,
+                resetEdits = false
+            )
+        }
     }
 
     private fun handleExportResult(resultCode: Int, data: Intent?) {
@@ -2999,7 +3374,8 @@ class MainActivity : Activity() {
         source: Uri,
         destination: Uri,
         request: ExportRequest,
-        attestation: DestinationAttestation
+        attestation: DestinationAttestation,
+        galleryPending: Boolean = false
     ) {
         hideError()
         clearExportStatus()
@@ -3032,10 +3408,26 @@ class MainActivity : Activity() {
                 exportGate.finish()
                 when (result) {
                     is JpegExporter.Result.Success -> {
-                        showExportSuccess(result.width, result.height)
+                        if (
+                            galleryPending &&
+                            !GalleryExportTarget.publish(contentResolver, destination)
+                        ) {
+                            GalleryExportTarget.discard(contentResolver, destination)
+                            showError(
+                                message = getString(R.string.error_gallery_export_create),
+                                actionLabel = R.string.retry_export,
+                                action = ::startExport
+                            )
+                        } else {
+                            markCurrentProjectExported(destination)
+                            showExportSuccess(result.width, result.height)
+                        }
                     }
 
                     is JpegExporter.Result.Failure -> {
+                        if (galleryPending) {
+                            GalleryExportTarget.discard(contentResolver, destination)
+                        }
                         showExportFailure(result.reason)
                     }
                 }
@@ -3147,7 +3539,13 @@ class MainActivity : Activity() {
         exportProgress.progress = 0
     }
 
-    private fun loadPhoto(uri: Uri, persisted: Boolean, resetEdits: Boolean) {
+    private fun loadPhoto(
+        uri: Uri,
+        persisted: Boolean,
+        resetEdits: Boolean,
+        project: Project? = null,
+        restoreDraft: Boolean = false
+    ) {
         if (loadingPhoto || exportGate.isExporting) {
             return
         }
@@ -3157,6 +3555,8 @@ class MainActivity : Activity() {
         pendingUri = uri
         pendingUriPersisted = persisted
         pendingResetEdits = resetEdits
+        pendingProject = project
+        pendingProjectRestoreDraft = restoreDraft
         loadingPhoto = true
         loadOverlay.visibility = View.VISIBLE
         renderIndicator.visibility = View.GONE
@@ -3188,6 +3588,10 @@ class MainActivity : Activity() {
         resetEdits: Boolean,
         result: PhotoLoader.Result.Success
     ) {
+        val loadedProject = pendingProject
+        val restoreDraftForProject = pendingProjectRestoreDraft
+        pendingProject = null
+        pendingProjectRestoreDraft = false
         val previousUri = selectedUri
         val wasPersistedForSameUri = previousUri == uri && selectedUriPersisted
 
@@ -3205,17 +3609,42 @@ class MainActivity : Activity() {
         previewImage.resetZoom()
         adjustedBitmap?.takeIf { it !== result.bitmap }?.recycle()
         adjustedBitmap = null
-        currentDisplayName = result.displayName
+        currentDisplayName = loadedProject?.displayName ?: result.displayName
         sourceWidth = result.sourceWidth.takeIf { it > 0 } ?: result.bitmap.width
         sourceHeight = result.sourceHeight.takeIf { it > 0 } ?: result.bitmap.height
-        if (resetEdits) {
+        if (loadedProject != null) {
+            currentProjectId = loadedProject.id
+            currentProject = loadedProject
+            val now = System.currentTimeMillis()
+            projectStore.markOpened(loadedProject.id, now)
+            projectStore.updateSourceInfo(
+                id = loadedProject.id,
+                displayName = loadedProject.displayName,
+                width = sourceWidth,
+                height = sourceHeight,
+                thumbnailPath = loadedProject.thumbnailPath
+            )
+        }
+        val draft = if (loadedProject != null && restoreDraftForProject) {
+            ProjectDraftCodec.read(
+                file = ProjectFiles.draftFile(this, loadedProject.id),
+                backup = ProjectFiles.draftBackupFile(this, loadedProject.id)
+            )
+        } else {
+            null
+        }
+        if (draft != null) {
+            editingState = EditingState.restored(draft.snapshot)
+            compareHeld = false
+            applyProjectUiState(draft.uiState)
+        } else if (resetEdits) {
             editingState = EditingState()
             compareHeld = false
             selectedCategory = EditorCategory.LIGHT
             maskActiveTool = "Brush"
             healingToolActive = false
             healingToggleButton?.text = getString(R.string.healing_tool_off)
-            maskOverlayVisible = false
+            setMaskOverlayVisible(false)
         }
 
         cropOverlay.setImageAspect(sourceWidth, sourceHeight)
@@ -3234,7 +3663,7 @@ class MainActivity : Activity() {
         requestPreviewRender()
         syncUiState()
 
-        if (resetEdits) {
+        if (resetEdits && draft == null) {
             root.smoothScrollTo(0, 0)
             result.embeddedEditSession?.let { payload ->
                 EditSessionCodec.decode(payload)?.let { snapshot ->
@@ -3263,7 +3692,9 @@ class MainActivity : Activity() {
         maskActiveTool = "Brush"
         healingToolActive = false
         healingToggleButton?.text = getString(R.string.healing_tool_off)
-        maskOverlayVisible = editingState.state.masking.selected().selection != null
+        setMaskOverlayVisible(
+            editingState.state.masking.selected().selection != null
+        )
         cropOverlay.setImageAspect(sourceWidth, sourceHeight)
         applyCropControlsFromState()
         applyFilterControlsFromState()
@@ -3283,6 +3714,8 @@ class MainActivity : Activity() {
         resetEdits: Boolean,
         reason: PhotoLoader.FailureReason
     ) {
+        pendingProject = null
+        pendingProjectRestoreDraft = false
         val fallback = selectedUri?.takeIf { sourceBitmap == null && it != uri }
         if (persisted && uri != selectedUri) {
             releasePersistedRead(uri)
@@ -3659,6 +4092,7 @@ class MainActivity : Activity() {
         compareButton.isEnabled = canEdit
         changePhotoButton.isEnabled = !busy
         openPhotoButton.isEnabled = !busy
+        projectsButton.isEnabled = !busy
         errorRetryButton.isEnabled = !busy
         exportButton.isEnabled = canEdit
         exportButton.setText(
@@ -3668,6 +4102,7 @@ class MainActivity : Activity() {
         sizeSpinner.isEnabled = canEdit
         colorSpaceSpinner.isEnabled = canEdit
         includeEditHistoryCheckBox.isEnabled = canEdit
+        galleryExportCheckBox.isEnabled = canEdit
         filterSpinner.isEnabled = canEdit
         filterIntensitySeekBar.isEnabled =
             canEdit && editingState.filter.filter != Filter.NATURAL
@@ -3707,7 +4142,9 @@ class MainActivity : Activity() {
         applyCategoryVisibility()
         if (!hasPhoto) {
             outputSummary.text = ""
+            projectSaveStatus.visibility = View.GONE
         }
+        scheduleProjectAutosave()
     }
 
     private fun showError(message: String, actionLabel: Int, action: (() -> Unit)?) {
@@ -3857,6 +4294,7 @@ class MainActivity : Activity() {
             savedState.getInt(STATE_COLOR_SPACE, selectedColorSpace.ordinal)
         ) ?: ExportColorSpace.SRGB
         includeEditHistory = savedState.getBoolean(STATE_INCLUDE_HISTORY, true)
+        galleryExport = savedState.getBoolean(STATE_GALLERY_EXPORT, true)
     }
 
     private fun restoreEditorCategory(savedState: Bundle?) {
@@ -3977,7 +4415,11 @@ class MainActivity : Activity() {
         outState.putInt(STATE_SIZE, selectedSize.ordinal)
         outState.putInt(STATE_COLOR_SPACE, selectedColorSpace.ordinal)
         outState.putBoolean(STATE_INCLUDE_HISTORY, includeEditHistory)
+        outState.putBoolean(STATE_GALLERY_EXPORT, galleryExport)
         outState.putInt(STATE_CATEGORY, selectedCategory.ordinal)
+        currentProjectId?.let { projectId ->
+            outState.putString(STATE_PROJECT_ID, projectId)
+        }
         outState.putFloat(STATE_HEALING_RADIUS, healingRadius)
         outState.putBoolean(STATE_HEALING_TOOL, healingToolActive)
         outState.putInt(STATE_CURVE_CHANNEL, curveChannel.ordinal)
@@ -4074,12 +4516,28 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    override fun onStop() {
+        if (::draftAutosave.isInitialized) {
+            draftAutosave.flush()
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             backCallback?.let(onBackInvokedDispatcher::unregisterOnBackInvokedCallback)
         }
         backCallback = null
         pendingExportRequest = null
+        if (::draftAutosave.isInitialized) {
+            draftAutosave.close()
+        }
+        if (::projectImporter.isInitialized) {
+            projectImporter.close()
+        }
+        if (::projectStore.isInitialized) {
+            projectStore.close()
+        }
         exporter.close()
         loader.close()
         renderer.close()
@@ -4106,12 +4564,22 @@ class MainActivity : Activity() {
     private companion object {
         const val REQUEST_PICK_IMAGE = 1001
         const val REQUEST_CREATE_JPEG = 1002
+        const val REQUEST_PROJECT_LIBRARY = 1003
+        const val MENU_PROJECTS = 2000
         const val MENU_PRESETS = 2001
         const val MENU_HISTORY = 2002
         const val MENU_EXPORT = 2003
         const val MENU_RESET = 2004
         const val MENU_CHANGE_PHOTO = 2005
         const val EDIT_PREVIEW_MAX_EDGE_PX = 1080
+        val MASK_ACTIVE_TOOLS = setOf(
+            "Brush",
+            "Eraser",
+            "Linear",
+            "Radial",
+            "Color Range",
+            "Luminance"
+        )
         const val LEGACY_ADJUSTMENT_COUNT = 11
         const val STATE_M5_EDIT_STATE = "m5_edit_state"
         const val STATE_M5_UNDO = "m5_undo"
@@ -4127,6 +4595,8 @@ class MainActivity : Activity() {
         const val STATE_SIZE = "m4_size"
         const val STATE_COLOR_SPACE = "m5_3_color_space"
         const val STATE_INCLUDE_HISTORY = "m5_3_include_history"
+        const val STATE_GALLERY_EXPORT = "m5_4_gallery_export"
+        const val STATE_PROJECT_ID = "m6_project_id"
         const val STATE_CATEGORY = "m5_2_category"
         const val STATE_HEALING_RADIUS = "m5_healing_radius"
         const val STATE_HEALING_TOOL = "m5_healing_tool"

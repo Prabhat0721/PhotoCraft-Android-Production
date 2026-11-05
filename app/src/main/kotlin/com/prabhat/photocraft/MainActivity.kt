@@ -6,14 +6,18 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.util.TypedValue
 import android.view.Menu
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.animation.DecelerateInterpolator
 import android.window.OnBackInvokedCallback
@@ -24,6 +28,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -88,10 +93,14 @@ import com.prabhat.photocraft.preset.PresetName
 import com.prabhat.photocraft.preset.PresetStore
 import com.prabhat.photocraft.ui.AdjustmentRowView
 import com.prabhat.photocraft.ui.AdaptivePreviewLayout
+import com.prabhat.photocraft.ui.ColorChipView
+import com.prabhat.photocraft.ui.ColorWheelView
 import com.prabhat.photocraft.ui.CropOverlayView
 import com.prabhat.photocraft.ui.CropPreviewView
 import com.prabhat.photocraft.ui.CurveEditorView
 import com.prabhat.photocraft.ui.EditorSliderView
+import com.prabhat.photocraft.ui.GradientSliderView
+import com.prabhat.photocraft.ui.HslColorCardView
 import com.prabhat.photocraft.ui.ProjectLibraryActivity
 import com.prabhat.photocraft.util.PhotoRestore
 import kotlin.math.roundToInt
@@ -185,6 +194,17 @@ class MainActivity : Activity() {
     private lateinit var gradingControls: LinearLayout
     private lateinit var effectsControls: LinearLayout
     private val advancedSliders = LinkedHashMap<String, EditorSliderView>()
+    private val hslCards = LinkedHashMap<HslColor, HslColorCardView>()
+    private val hslChips = LinkedHashMap<HslColor, ColorChipView>()
+    private var selectedHslColor = HslColor.RED
+    private lateinit var gradingWheel: ColorWheelView
+    private lateinit var gradingHueSlider: GradientSliderView
+    private lateinit var gradingSaturationSlider: GradientSliderView
+    private lateinit var gradingLuminanceSlider: GradientSliderView
+    private lateinit var gradingBalanceSlider: GradientSliderView
+    private lateinit var gradingBlendingSlider: GradientSliderView
+    private val gradingTabButtons = LinkedHashMap<GradeRegion, TextView>()
+    private var activeGradeRegion = GradeRegion.SHADOWS
     private var curveEditor: CurveEditorView? = null
     private var curveChannel = CurveChannel.RGB
     private val curveChannelButtons = LinkedHashMap<CurveChannel, Button>()
@@ -681,79 +701,12 @@ class MainActivity : Activity() {
         gradingControls.removeAllViews()
         effectsControls.removeAllViews()
         advancedSliders.clear()
+        hslCards.clear()
+        hslChips.clear()
 
-        for (color in HslColor.entries) {
-            val title = color.name.lowercase().replaceFirstChar { it.uppercase() }
-            addAdvancedSlider(
-                hslControls, "hsl_${color.name}_hue", "$title · Hue",
-                -180, 180, editingState.state.colorGrading.hsl.adjustment(color).hue
-            ) { value ->
-                val state = editingState.state.colorGrading
-                val old = state.hsl.adjustment(color)
-                updateColorGrading(state.copy(
-                    hsl = replaceHsl(state.hsl, color, old.copy(hue = value))
-                ))
-            }
-            addAdvancedSlider(
-                hslControls, "hsl_${color.name}_sat", "$title · Saturation",
-                -100, 100, editingState.state.colorGrading.hsl.adjustment(color).saturation
-            ) { value ->
-                val state = editingState.state.colorGrading
-                val old = state.hsl.adjustment(color)
-                updateColorGrading(state.copy(
-                    hsl = replaceHsl(state.hsl, color, old.copy(saturation = value))
-                ))
-            }
-            addAdvancedSlider(
-                hslControls, "hsl_${color.name}_lum", "$title · Luminance",
-                -100, 100, editingState.state.colorGrading.hsl.adjustment(color).luminance
-            ) { value ->
-                val state = editingState.state.colorGrading
-                val old = state.hsl.adjustment(color)
-                updateColorGrading(state.copy(
-                    hsl = replaceHsl(state.hsl, color, old.copy(luminance = value))
-                ))
-            }
-        }
+        buildHslMixer()
 
-        for (region in GradeRegion.entries) {
-            val initial = gradeFor(editingState.state.colorGrading, region)
-            val title = region.name.lowercase().replaceFirstChar { it.uppercase() }
-            addAdvancedSlider(
-                gradingControls, "grade_${region.name}_hue", "$title · Hue",
-                -180, 180, initial.hue
-            ) { value ->
-                val state = editingState.state.colorGrading
-                updateColorGrading(withGrade(state, region, gradeFor(state, region).copy(hue = value)))
-            }
-            addAdvancedSlider(
-                gradingControls, "grade_${region.name}_amount", "$title · Amount",
-                0, 100, initial.amount
-            ) { value ->
-                val state = editingState.state.colorGrading
-                updateColorGrading(withGrade(state, region, gradeFor(state, region).copy(amount = value)))
-            }
-            addAdvancedSlider(
-                gradingControls, "grade_${region.name}_lum", "$title · Luminance",
-                -100, 100, initial.luminance
-            ) { value ->
-                val state = editingState.state.colorGrading
-                updateColorGrading(withGrade(state, region, gradeFor(state, region).copy(luminance = value)))
-            }
-        }
-
-        addAdvancedSlider(
-            gradingControls, "grade_balance", "Balance",
-            -100, 100, editingState.state.colorGrading.balance
-        ) { value ->
-            updateColorGrading(editingState.state.colorGrading.copy(balance = value))
-        }
-        addAdvancedSlider(
-            gradingControls, "grade_blending", "Blending",
-            0, 100, editingState.state.colorGrading.blending
-        ) { value ->
-            updateColorGrading(editingState.state.colorGrading.copy(blending = value))
-        }
+        buildColorGrading()
 
         addAdvancedSlider(
             effectsControls, "effect_texture", "Texture",
@@ -809,6 +762,399 @@ class MainActivity : Activity() {
 
         applyAdvancedControlsFromState()
     }
+
+    private fun buildHslMixer() {
+        hslCards.clear()
+        hslChips.clear()
+
+        val chipsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            setPadding(0, dp(2), 0, dp(10))
+        }
+        val chipsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        chipsScroll.addView(
+            chipsRow,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        hslControls.addView(
+            chipsScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        for ((index, color) in HslColor.entries.withIndex()) {
+            val chip = ColorChipView(this).apply {
+                setChannelColor(ColorChipView.colorForHue(color.centerHue, 0.9f, 0.98f))
+                contentDescription = hslChannelLabel(color)
+                isSelected = color == selectedHslColor
+                setOnClickListener { selectHslColor(color) }
+            }
+            val params = LinearLayout.LayoutParams(dp(36), dp(36))
+            if (index > 0) params.marginStart = dp(8)
+            chipsRow.addView(chip, params)
+            hslChips[color] = chip
+        }
+
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        hslControls.addView(
+            grid,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val cardListener = object : HslColorCardView.Listener {
+            override fun onHslGestureStarted(card: HslColorCardView) {
+                if (!canEditPhoto()) return
+                editingState.beginGesture()
+                clearExportStatus()
+            }
+
+            override fun onHslChanged(card: HslColorCardView, adjustment: HslAdjustment) {
+                if (!canEditPhoto()) return
+                val state = editingState.state.colorGrading
+                updateColorGrading(state.copy(
+                    hsl = replaceHsl(state.hsl, card.color, adjustment)
+                ))
+            }
+
+            override fun onHslGestureStopped(card: HslColorCardView) {
+                if (!canEditPhoto()) return
+                editingState.endGesture()
+                refreshHistory()
+                syncUiState()
+            }
+        }
+
+        val colors = HslColor.entries
+        val rowCount = (colors.size + 1) / 2
+        for (rowIndex in 0 until rowCount) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                isBaselineAligned = false
+            }
+            for (column in 0..1) {
+                val colorIndex = rowIndex * 2 + column
+                if (colorIndex >= colors.size) continue
+                val color = colors[colorIndex]
+                val card = HslColorCardView(this).apply {
+                    isSelected = color == selectedHslColor
+                    bind(
+                        color,
+                        editingState.state.colorGrading.hsl.adjustment(color),
+                        cardListener
+                    )
+                }
+                val params = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+                if (column > 0) params.marginStart = dp(8)
+                row.addView(card, params)
+                hslCards[color] = card
+            }
+            val rowParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            if (rowIndex > 0) rowParams.topMargin = dp(8)
+            grid.addView(row, rowParams)
+        }
+    }
+
+    private fun selectHslColor(color: HslColor) {
+        selectedHslColor = color
+        for ((key, chip) in hslChips) chip.isSelected = key == color
+        for ((key, card) in hslCards) card.isSelected = key == color
+    }
+
+    private fun hslChannelLabel(color: HslColor): String =
+        color.name.lowercase().replaceFirstChar { it.uppercase() }
+
+    private fun buildColorGrading() {
+        gradingControls.removeAllViews()
+        gradingTabButtons.clear()
+
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+        }
+        gradingControls.addView(
+            tabs,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        for ((index, region) in GradeRegion.entries.withIndex()) {
+            val tab = TextView(this).apply {
+                text = gradeRegionLabel(region)
+                gravity = android.view.Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(resources.getColorStateList(R.color.tool_chip_text, theme))
+                setBackgroundResource(R.drawable.bg_tool_chip)
+                isClickable = true
+                isFocusable = true
+                isSelected = region == activeGradeRegion
+                setOnClickListener { selectGradeRegion(region) }
+            }
+            val params = LinearLayout.LayoutParams(0, dp(40), 1f)
+            if (index > 0) params.marginStart = dp(6)
+            tabs.addView(tab, params)
+            gradingTabButtons[region] = tab
+        }
+
+        val wheelHolder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+            setPadding(dp(12), dp(14), dp(12), dp(12))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    getColor(R.color.surface_alt),
+                    getColor(R.color.surface)
+                )
+            ).apply {
+                cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), getColor(R.color.stroke))
+            }
+        }
+        gradingControls.addView(
+            wheelHolder,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        gradingWheel = ColorWheelView(this)
+        wheelHolder.addView(
+            gradingWheel,
+            LinearLayout.LayoutParams(dp(200), dp(200))
+        )
+
+        gradingHueSlider = buildGradingSlider(getString(R.string.control_hue), -180, 180, 0)
+        gradingSaturationSlider =
+            buildGradingSlider(getString(R.string.control_saturation), 0, 100, 0)
+        gradingLuminanceSlider =
+            buildGradingSlider(getString(R.string.control_luminance), -100, 100, 0)
+        gradingBalanceSlider =
+            buildGradingSlider(getString(R.string.control_balance), -100, 100, 0)
+        gradingBlendingSlider =
+            buildGradingSlider(getString(R.string.control_blending), 0, 100, 50)
+
+        gradingControls.addView(gradingHueSlider, gradingSliderParams())
+        gradingControls.addView(gradingSaturationSlider, gradingSliderParams())
+        gradingControls.addView(gradingLuminanceSlider, gradingSliderParams())
+        gradingControls.addView(gradingBalanceSlider, gradingSliderParams())
+        gradingControls.addView(gradingBlendingSlider, gradingSliderParams())
+
+        val gradeSliderListener = object : GradientSliderView.Listener {
+            override fun onSliderStarted(view: GradientSliderView) {
+                beginGradingGesture()
+            }
+
+            override fun onSliderChanged(view: GradientSliderView, value: Int) {
+                when (view) {
+                    gradingHueSlider -> {
+                        gradingWheel.setHue(value)
+                        refreshGradingGradients()
+                    }
+
+                    gradingSaturationSlider -> gradingWheel.setSaturation(value)
+                }
+                applyActiveGrade()
+            }
+
+            override fun onSliderStopped(view: GradientSliderView) {
+                endGradingGesture()
+            }
+        }
+        gradingHueSlider.setOnSliderListener(gradeSliderListener)
+        gradingSaturationSlider.setOnSliderListener(gradeSliderListener)
+        gradingLuminanceSlider.setOnSliderListener(gradeSliderListener)
+
+        val globalSliderListener = object : GradientSliderView.Listener {
+            override fun onSliderStarted(view: GradientSliderView) {
+                beginGradingGesture()
+            }
+
+            override fun onSliderChanged(view: GradientSliderView, value: Int) {
+                applyGradingGlobals()
+            }
+
+            override fun onSliderStopped(view: GradientSliderView) {
+                endGradingGesture()
+            }
+        }
+        gradingBalanceSlider.setOnSliderListener(globalSliderListener)
+        gradingBlendingSlider.setOnSliderListener(globalSliderListener)
+
+        gradingWheel.setOnWheelListener(object : ColorWheelView.Listener {
+            override fun onWheelStarted(view: ColorWheelView) {
+                beginGradingGesture()
+            }
+
+            override fun onWheelChanged(view: ColorWheelView, hue: Int, saturation: Int) {
+                gradingHueSlider.setValue(hue)
+                gradingSaturationSlider.setValue(saturation)
+                refreshGradingGradients()
+                applyActiveGrade()
+            }
+
+            override fun onWheelStopped(view: ColorWheelView) {
+                endGradingGesture()
+            }
+        })
+
+        applyGradingFromState(editingState.state.colorGrading)
+    }
+
+    private fun buildGradingSlider(
+        title: String,
+        minimum: Int,
+        maximum: Int,
+        neutral: Int
+    ): GradientSliderView = GradientSliderView(this).apply {
+        configure(
+            title = title,
+            minimum = minimum,
+            maximum = maximum,
+            initialValue = neutral,
+            neutralValue = neutral
+        )
+        setCompact(true)
+        setCenterMarkerVisible(true)
+    }
+
+    private fun gradingSliderParams(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+
+    private fun gradeRegionLabel(region: GradeRegion): String = when (region) {
+        GradeRegion.SHADOWS -> getString(R.string.adjust_shadows)
+        GradeRegion.MIDTONES -> getString(R.string.grade_midtones)
+        GradeRegion.HIGHLIGHTS -> getString(R.string.adjust_highlights)
+    }
+
+    private fun selectGradeRegion(region: GradeRegion) {
+        if (activeGradeRegion == region) return
+        activeGradeRegion = region
+        for ((key, tab) in gradingTabButtons) {
+            tab.isSelected = key == region
+        }
+        applyGradingFromState(editingState.state.colorGrading)
+    }
+
+    private fun applyGradingFromState(grading: ColorGradingSettings) {
+        if (!::gradingWheel.isInitialized) return
+        val grade = gradeFor(grading, activeGradeRegion)
+        gradingWheel.setValue(grade.hue, grade.amount)
+        gradingHueSlider.setValue(grade.hue)
+        gradingSaturationSlider.setValue(grade.amount)
+        gradingLuminanceSlider.setValue(grade.luminance)
+        gradingBalanceSlider.setValue(grading.balance)
+        gradingBlendingSlider.setValue(grading.blending)
+        refreshGradingGradients()
+        for ((region, tab) in gradingTabButtons) {
+            tab.isSelected = region == activeGradeRegion
+        }
+    }
+
+    private fun refreshGradingGradients() {
+        if (!::gradingHueSlider.isInitialized) return
+        val hue = gradingWheel.hue
+        gradingHueSlider.setGradient(rainbowGradient())
+        gradingSaturationSlider.setGradient(tintSaturationGradient(hue))
+        gradingLuminanceSlider.setGradient(tintLuminanceGradient(hue))
+        gradingBalanceSlider.setGradient(
+            intArrayOf(0xFF3A7BD5.toInt(), 0xFF3A3A42.toInt(), 0xFFF5A623.toInt())
+        )
+        gradingBlendingSlider.setGradient(
+            intArrayOf(0xFF3A3A42.toInt(), 0xFF6EE7B7.toInt())
+        )
+    }
+
+    private fun applyActiveGrade() {
+        if (!canEditPhoto()) return
+        val state = editingState.state.colorGrading
+        val grade = gradeFor(state, activeGradeRegion).copy(
+            hue = gradingWheel.hue,
+            amount = gradingWheel.saturation,
+            luminance = gradingLuminanceSlider.value
+        )
+        updateColorGrading(withGrade(state, activeGradeRegion, grade))
+    }
+
+    private fun applyGradingGlobals() {
+        if (!canEditPhoto()) return
+        val state = editingState.state.colorGrading
+        updateColorGrading(
+            state.copy(
+                balance = gradingBalanceSlider.value,
+                blending = gradingBlendingSlider.value
+            )
+        )
+    }
+
+    private fun beginGradingGesture() {
+        if (!canEditPhoto()) return
+        editingState.beginGesture()
+        clearExportStatus()
+    }
+
+    private fun endGradingGesture() {
+        if (!canEditPhoto()) return
+        editingState.endGesture()
+        refreshHistory()
+        syncUiState()
+    }
+
+    private fun rainbowGradient(): IntArray {
+        val colors = IntArray(7)
+        for (index in colors.indices) {
+            colors[index] = ColorChipView.colorForHue(index * 60f, 1f, 1f)
+        }
+        return colors
+    }
+
+    private fun tintSaturationGradient(hue: Int): IntArray {
+        val normalized = normalizeHue(hue)
+        return intArrayOf(
+            Color.HSVToColor(floatArrayOf(normalized, 0f, 0.78f)),
+            Color.HSVToColor(floatArrayOf(normalized, 1f, 1f))
+        )
+    }
+
+    private fun tintLuminanceGradient(hue: Int): IntArray {
+        val normalized = normalizeHue(hue)
+        return intArrayOf(
+            Color.BLACK,
+            Color.HSVToColor(floatArrayOf(normalized, 1f, 0.75f)),
+            Color.WHITE
+        )
+    }
+
+    private fun normalizeHue(hue: Int): Float =
+        (((hue.toFloat() % 360f) + 360f) % 360f)
 
     private fun curveForChannel(
         curves: CurvesSettings,
@@ -1168,19 +1514,10 @@ class MainActivity : Activity() {
         }
 
         for (color in HslColor.entries) {
-            val adjustment = grading.hsl.adjustment(color)
-            setValue("hsl_${color.name}_hue", adjustment.hue)
-            setValue("hsl_${color.name}_sat", adjustment.saturation)
-            setValue("hsl_${color.name}_lum", adjustment.luminance)
+            hslCards[color]?.setAdjustment(grading.hsl.adjustment(color))
         }
-        for (region in GradeRegion.entries) {
-            val grade = gradeFor(grading, region)
-            setValue("grade_${region.name}_hue", grade.hue)
-            setValue("grade_${region.name}_amount", grade.amount)
-            setValue("grade_${region.name}_lum", grade.luminance)
-        }
-        setValue("grade_balance", grading.balance)
-        setValue("grade_blending", grading.blending)
+        selectHslColor(selectedHslColor)
+        applyGradingFromState(grading)
         setValue("effect_texture", effects.texture)
         setValue("effect_sharpness", effects.sharpness)
         setValue("effect_details", effects.details)
@@ -4131,6 +4468,24 @@ class MainActivity : Activity() {
         }
         for (slider in advancedSliders.values) {
             slider.setSliderEnabled(canEdit)
+        }
+        for (card in hslCards.values) {
+            card.setCardEnabled(canEdit)
+        }
+        for (chip in hslChips.values) {
+            chip.isEnabled = canEdit
+            chip.alpha = if (canEdit) 1f else 0.45f
+        }
+        if (::gradingWheel.isInitialized) {
+            gradingWheel.setWheelEnabled(canEdit)
+            gradingHueSlider.setSliderEnabled(canEdit)
+            gradingSaturationSlider.setSliderEnabled(canEdit)
+            gradingLuminanceSlider.setSliderEnabled(canEdit)
+            gradingBalanceSlider.setSliderEnabled(canEdit)
+            gradingBlendingSlider.setSliderEnabled(canEdit)
+            for (tab in gradingTabButtons.values) {
+                tab.isEnabled = canEdit
+            }
         }
         refreshHistory()
 

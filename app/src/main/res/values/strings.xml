@@ -95,6 +95,13 @@
     <string name="adjustment_control_description">%1$s, %2$s</string>
     <string name="section_hsl_mixer">HSL Color Mixer</string>
     <string name="section_color_grading">Color Grading</string>
+    <string name="control_hue">Hue</string>
+    <string name="control_saturation">Saturation</string>
+    <string name="control_luminance">Luminance</string>
+    <string name="control_balance">Balance</string>
+    <string name="control_blending">Blending</string>
+    <string name="grade_midtones">Midtones</string>
+    <string name="grade_wheel_description">Hue %1$d, saturation %2$d</string>
     <string name="masking_title">Masking</string>
     <string name="masking_description">Choose a mask, then adjust only the selected area. Subject and Background use automatic detection; gradients, color range and luminance range are drawn on the preview.</string>
     <string name="mask_auto_select">AUTO SELECT</string>

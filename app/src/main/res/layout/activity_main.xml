@@ -374,54 +374,81 @@
                             android:id="@+id/colorPanel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="10dp"
-                            android:background="@drawable/bg_panel"
-                            android:elevation="1dp"
                             android:orientation="vertical"
-                            android:padding="16dp"
                             android:visibility="gone">
 
-                            <TextView
-                                style="@style/PhotoCraftSectionLabel"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:accessibilityHeading="true"
-                                android:text="@string/color_title" />
-
                             <LinearLayout
-                                android:id="@+id/colorControls"
+                                android:id="@+id/whiteBalancePanel"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:orientation="vertical" />
+                                android:layout_marginBottom="10dp"
+                                android:background="@drawable/bg_panel"
+                                android:elevation="1dp"
+                                android:orientation="vertical"
+                                android:padding="16dp">
 
-                            <TextView
-                                style="@style/PhotoCraftSectionLabel"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="18dp"
-                                android:accessibilityHeading="true"
-                                android:text="@string/section_hsl_mixer" />
+                                <TextView
+                                    style="@style/PhotoCraftSectionLabel"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:accessibilityHeading="true"
+                                    android:text="@string/color_title" />
 
-                            <LinearLayout
-                                android:id="@+id/hslControls"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:orientation="vertical" />
-
-                            <TextView
-                                style="@style/PhotoCraftSectionLabel"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="18dp"
-                                android:accessibilityHeading="true"
-                                android:text="@string/section_color_grading" />
+                                <LinearLayout
+                                    android:id="@+id/colorControls"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:orientation="vertical" />
+                            </LinearLayout>
 
                             <LinearLayout
-                                android:id="@+id/gradingControls"
+                                android:id="@+id/hslPanel"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:orientation="vertical" />
+                                android:layout_marginBottom="10dp"
+                                android:background="@drawable/bg_panel"
+                                android:elevation="1dp"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <TextView
+                                    style="@style/PhotoCraftSectionLabel"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:accessibilityHeading="true"
+                                    android:text="@string/section_hsl_mixer" />
+
+                                <LinearLayout
+                                    android:id="@+id/hslControls"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:id="@+id/gradingPanel"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="10dp"
+                                android:background="@drawable/bg_panel"
+                                android:elevation="1dp"
+                                android:orientation="vertical"
+                                android:padding="16dp">
+
+                                <TextView
+                                    style="@style/PhotoCraftSectionLabel"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:accessibilityHeading="true"
+                                    android:text="@string/section_color_grading" />
+
+                                <LinearLayout
+                                    android:id="@+id/gradingControls"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical" />
+                            </LinearLayout>
                         </LinearLayout>
 
                         <LinearLayout
